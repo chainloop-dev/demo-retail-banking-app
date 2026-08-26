@@ -11,6 +11,16 @@ See the presentation here:
 > For up-to-date information, please refer to this repository and its documentation.
 
 
+## Repository layout
+
+| Directory | Contents |
+|---|---|
+| `payments-api/` | The Spring Boot service — Maven build, sources and local `docker-compose.yml`. |
+| `mobile-client/` | Placeholder for the upcoming mobile client. Empty for now. |
+| `k8s/` | Kubernetes manifests used by the deploy-and-test workflow. |
+
+All Maven commands below are run from `payments-api/`.
+
 ## Run Petclinic locally
 
 Spring Petclinic is a [Spring Boot](https://spring.io/guides/gs/spring-boot) application built using [Maven](https://spring.io/guides/gs/maven/).
@@ -20,7 +30,7 @@ You first need to clone the project locally:
 
 ```bash
 git clone https://github.com/spring-projects/spring-petclinic.git
-cd spring-petclinic
+cd spring-petclinic/payments-api
 ```
 You can start the application on the command-line as follows:
 
@@ -108,11 +118,11 @@ the machine-readable report Chainloop ingests. The run is report-only: it never 
 the build on a low score, since gating is the policy's job.
 
 CI runs the same command in a dedicated `mutation-testing` job on every push and pull
-request and uploads `target/pit-reports/` as the `pit-reports` build artifact.
+request and uploads `payments-api/target/pit-reports/` as the `pit-reports` build artifact.
 
 ## Compiling the CSS
 
-There is a `petclinic.css` in `src/main/resources/static/resources/css`. It was generated from the `petclinic.scss` source, combined with the [Bootstrap](https://getbootstrap.com/) library. If you make changes to the `scss`, or upgrade Bootstrap, you will need to re-compile the CSS resources using the Maven profile "css", i.e. `./mvnw package -P css`.
+There is a `petclinic.css` in `payments-api/src/main/resources/static/resources/css`. It was generated from the `petclinic.scss` source, combined with the [Bootstrap](https://getbootstrap.com/) library. If you make changes to the `scss`, or upgrade Bootstrap, you will need to re-compile the CSS resources using the Maven profile "css", i.e. `./mvnw package -P css`.
 
 ## Working with Petclinic in your IDE
 
@@ -139,7 +149,7 @@ The following items should be installed in your system:
 
 1. Inside Eclipse or STS:
 
-    Open the project via `File -> Import -> Maven -> Existing Maven project`, then select the root directory of the cloned repo.
+    Open the project via `File -> Import -> Maven -> Existing Maven project`, then select the `payments-api` directory of the cloned repo.
 
     Then either build on the command line `./mvnw generate-resources` or use the Eclipse launcher (right-click on project and `Run As -> Maven install`) to generate the CSS. Run the application's main method by right-clicking on it and choosing `Run As -> Java Application`.
 
