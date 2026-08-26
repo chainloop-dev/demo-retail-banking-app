@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "chainloop trace hook claude post-tool-use",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit|Bash"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "chainloop trace hook claude pre-tool-use",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit|Bash"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "chainloop trace hook claude session-end",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "chainloop trace hook claude session-start",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}
