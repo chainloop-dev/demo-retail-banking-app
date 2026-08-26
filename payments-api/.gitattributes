@@ -1,4 +1,4 @@
-/payments-api/mvnw           text eol=lf
+mvnw           text eol=lf
 *.cmd           text eol=crlf
 *.java          text eol=lf
 
