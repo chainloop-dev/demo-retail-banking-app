@@ -1,4 +1,4 @@
-# Spring PetClinic Sample Application [![Build Status](https://github.com/spring-projects/spring-petclinic/actions/workflows/maven-build.yml/badge.svg)](https://github.com/spring-projects/spring-petclinic/actions/workflows/maven-build.yml)[![Build Status](https://github.com/spring-projects/spring-petclinic/actions/workflows/gradle-build.yml/badge.svg)](https://github.com/spring-projects/spring-petclinic/actions/workflows/gradle-build.yml)
+# Spring PetClinic Sample Application [![Build Status](https://github.com/spring-projects/spring-petclinic/actions/workflows/maven-build.yml/badge.svg)](https://github.com/spring-projects/spring-petclinic/actions/workflows/maven-build.yml)
 
 [![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/spring-projects/spring-petclinic) [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=7517918)
 
@@ -13,7 +13,7 @@ See the presentation here:
 
 ## Run Petclinic locally
 
-Spring Petclinic is a [Spring Boot](https://spring.io/guides/gs/spring-boot) application built using [Maven](https://spring.io/guides/gs/maven/) or [Gradle](https://spring.io/guides/gs/gradle/).
+Spring Petclinic is a [Spring Boot](https://spring.io/guides/gs/spring-boot) application built using [Maven](https://spring.io/guides/gs/maven/).
 Java 17 or later is required for the build, and the application can run with Java 17 or newer.
 
 You first need to clone the project locally:
@@ -22,15 +22,10 @@ You first need to clone the project locally:
 git clone https://github.com/spring-projects/spring-petclinic.git
 cd spring-petclinic
 ```
-If you are using Maven, you can start the application on the command-line as follows:
+You can start the application on the command-line as follows:
 
 ```bash
 ./mvnw spring-boot:run
-```
-With Gradle, the command is as follows:
-
-```bash
-./gradlew bootRun
 ```
 
 You can then access the Petclinic at <http://localhost:8080/>.
@@ -98,9 +93,26 @@ docker compose up postgres
 
 At development time we recommend you use the test applications set up as `main()` methods in `PetClinicIntegrationTests` (using the default H2 database and also adding Spring Boot Devtools), `MySqlTestApplication` and `PostgresIntegrationTests`. These are set up so that you can run the apps in your IDE to get fast feedback and also run the same classes as integration tests against the respective database. The MySql integration tests use Testcontainers to start the database in a Docker container, and the Postgres tests use Docker Compose to do the same thing.
 
+## Mutation testing
+
+Coverage tells you which lines ran; mutation testing tells you whether the tests would
+notice if those lines were wrong. [PIT](https://pitest.org/) is wired up behind the
+`mutation` Maven profile, because a full mutation run is much slower than the test suite:
+
+```bash
+./mvnw -P mutation verify
+```
+
+Reports land in `target/pit-reports/` — `index.html` to browse, and `mutations.xml`,
+the machine-readable report Chainloop ingests. The run is report-only: it never fails
+the build on a low score, since gating is the policy's job.
+
+CI runs the same command in a dedicated `mutation-testing` job on every push and pull
+request and uploads `target/pit-reports/` as the `pit-reports` build artifact.
+
 ## Compiling the CSS
 
-There is a `petclinic.css` in `src/main/resources/static/resources/css`. It was generated from the `petclinic.scss` source, combined with the [Bootstrap](https://getbootstrap.com/) library. If you make changes to the `scss`, or upgrade Bootstrap, you will need to re-compile the CSS resources using the Maven profile "css", i.e. `./mvnw package -P css`. There is no build profile for Gradle to compile the CSS.
+There is a `petclinic.css` in `src/main/resources/static/resources/css`. It was generated from the `petclinic.scss` source, combined with the [Bootstrap](https://getbootstrap.com/) library. If you make changes to the `scss`, or upgrade Bootstrap, you will need to re-compile the CSS resources using the Maven profile "css", i.e. `./mvnw package -P css`.
 
 ## Working with Petclinic in your IDE
 

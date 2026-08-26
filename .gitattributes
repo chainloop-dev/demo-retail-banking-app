@@ -2,5 +2,4 @@
 *.cmd           text eol=crlf
 *.java          text eol=lf
 
-/gradlew        text eol=lf
 *.bat           text eol=crlf
