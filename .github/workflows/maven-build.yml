@@ -6,8 +6,18 @@ name: Java CI with Maven
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'payments-api/**'
+      - '.github/workflows/maven-build.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'payments-api/**'
+      - '.github/workflows/maven-build.yml'
+
+defaults:
+  run:
+    working-directory: payments-api
 
 jobs:
   build:
@@ -71,5 +81,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pit-reports
-          path: target/pit-reports/
+          path: payments-api/target/pit-reports/
           if-no-files-found: error
