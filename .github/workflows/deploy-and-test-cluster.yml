@@ -4,11 +4,11 @@ on:
   push:
     branches: [main]
     paths:
-      - 'k8s/**'
+      - 'payments-api/k8s/**'
   pull_request:
     branches: [main]
     paths:
-      - 'k8s/**'
+      - 'payments-api/k8s/**'
 
 jobs:
   deploy-and-test-cluster:
@@ -22,7 +22,7 @@ jobs:
 
       - name: Deploy application
         run: |
-          kubectl apply -f k8s/
+          kubectl apply -f payments-api/k8s/
 
       - name: Wait for Pods to be ready
         run: |
