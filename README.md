@@ -1,6 +1,6 @@
 # Demo Retail Banking Application
 
-[![Java CI with Maven](https://github.com/chainloop-dev/java-component-demo/actions/workflows/maven-build.yml/badge.svg)](https://github.com/chainloop-dev/java-component-demo/actions/workflows/maven-build.yml)
+[![Java CI with Maven](https://github.com/chainloop-dev/demo-retail-banking-app/actions/workflows/maven-build.yml/badge.svg)](https://github.com/chainloop-dev/demo-retail-banking-app/actions/workflows/maven-build.yml)
 
 An example application used to demonstrate software supply chain security with
 [Chainloop](https://chainloop.dev). It is a multi-component product: a backend API and a mobile
