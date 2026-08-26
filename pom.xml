@@ -34,6 +34,8 @@
     <lifecycle-mapping>1.0.0</lifecycle-mapping>
     <maven-checkstyle.version>3.6.0</maven-checkstyle.version>
     <nohttp-checkstyle.version>0.0.11</nohttp-checkstyle.version>
+    <pitest.version>1.25.9</pitest.version>
+    <pitest-junit5.version>1.2.3</pitest-junit5.version>
     <spring-format.version>0.0.47</spring-format.version>
   </properties>
 
@@ -366,6 +368,61 @@
                 <phase>generate-resources</phase>
               </execution>
             </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <!-- Mutation testing with PIT. Kept in a profile because a full mutation run
+      takes far longer than the regular test suite, so it is opt-in:
+      `./mvnw -P mutation verify`. The XML report is what Chainloop ingests. -->
+    <profile>
+      <id>mutation</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <version>${pitest.version}</version>
+            <executions>
+              <execution>
+                <id>mutation-coverage</id>
+                <goals>
+                  <goal>mutationCoverage</goal>
+                </goals>
+                <phase>verify</phase>
+              </execution>
+            </executions>
+            <configuration>
+              <targetClasses>
+                <param>org.springframework.samples.petclinic.*</param>
+              </targetClasses>
+              <targetTests>
+                <param>org.springframework.samples.petclinic.*</param>
+              </targetTests>
+              <!-- Container-backed tests are too slow to re-run once per mutant and
+                need a Docker daemon, so they don't take part in the mutation run. -->
+              <excludedTestClasses>
+                <param>org.springframework.samples.petclinic.MySqlIntegrationTests</param>
+                <param>org.springframework.samples.petclinic.PostgresIntegrationTests</param>
+                <param>org.springframework.samples.petclinic.PetClinicConcurrencyTests</param>
+              </excludedTestClasses>
+              <outputFormats>
+                <param>HTML</param>
+                <param>XML</param>
+              </outputFormats>
+              <!-- Explicit (though it matches the plugin default) because the report
+                path has to stay stable for CI upload and attestation: without this the
+                report lands in target/pit-reports/<yyyyMMddHHmm>/. -->
+              <timestampedReports>false</timestampedReports>
+              <timeoutFactor>2</timeoutFactor>
+            </configuration>
+            <dependencies>
+              <dependency>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-junit5-plugin</artifactId>
+                <version>${pitest-junit5.version}</version>
+              </dependency>
+            </dependencies>
           </plugin>
         </plugins>
       </build>
