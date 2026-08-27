@@ -112,8 +112,10 @@ Reports land in `target/pit-reports/` — `index.html` to browse, and `mutations
 machine-readable report Chainloop ingests. The run is report-only: it never fails the build on
 a low score, since gating is the policy's job.
 
-CI runs the same command in a dedicated `mutation-testing` job on every push and pull request,
-and uploads `payments-api/target/pit-reports/` as the `pit-reports` build artifact.
+CI runs the same command in a dedicated `mutation-testing` job and attests `mutations.xml` to
+Chainloop. No pipeline in this repository publishes build artifacts: the attested copy is the
+retrievable one, and a parallel copy on the workflow run would expire while claiming to be the
+same evidence.
 
 ## Compiling the CSS
 

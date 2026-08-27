@@ -181,17 +181,6 @@ jobs:
           chainloop attestation add --name integration-report --kind JUNIT_XML \
             --value failsafe-reports.zip --attestation-id "$ATTESTATION_ID"
 
-      # Mirrors the PIT report upload in api-build.yml. upload-artifact always
-      # zips, so the download is failsafe-reports.zip; the attestation above
-      # consumed the zip this job built rather than round-tripping through it.
-      - name: Upload integration reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-reports
-          path: payments-api/target/failsafe-reports/
-          if-no-files-found: warn
-
   # Closes the attestation and, only if it was accepted, promotes the version.
   # `success()` and `failure()` describe a job's own steps, so the upstream
   # results have to be read from the needs context instead.
