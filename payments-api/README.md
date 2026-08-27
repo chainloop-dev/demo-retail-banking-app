@@ -109,8 +109,8 @@ Import this directory (`payments-api`) as a Maven project:
 - **IntelliJ IDEA** — `File -> Open` and select [`pom.xml`](pom.xml). Generate the CSS with
   `./mvnw generate-resources` or `Maven -> Generate Sources and Update Folders`, then run the
   `PetClinicApplication` main class.
-- **VS Code** — the repository ships a devcontainer and Gitpod configuration with the Java
-  extension pack preinstalled.
+- **VS Code** — open the `payments-api` folder and install the Java extension pack; generate the
+  CSS with `./mvnw generate-resources`, then run the `PetClinicApplication` main class.
 
 Editor preferences are in [`.editorconfig`](.editorconfig); plugins are available at
 <https://editorconfig.org>.

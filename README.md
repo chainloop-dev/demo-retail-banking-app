@@ -24,7 +24,6 @@ Each component owns its own build, configuration and documentation. Start with
 |---|---|
 | `.github/workflows/` | CI pipelines for every component. |
 | `.chainloop.yml` | Chainloop organization. Each pipeline names its own project (`payments-api`, `mobile-banking`) explicitly. |
-| `.devcontainer/`, `.gitpod.yml` | Prebuilt development environments. |
 
 ## License
 
