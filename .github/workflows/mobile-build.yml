@@ -107,7 +107,7 @@ jobs:
         if: cancelled() && steps.init.outcome == 'success'
         run: chainloop attestation reset --trigger cancellation
 
-      # Mirrors the PIT report upload in maven-build.yml. upload-artifact always
+      # Mirrors the PIT report upload in api-build.yml. upload-artifact always
       # zips, so the download is mobile-evidence.zip; the attestation above
       # consumed the raw files rather than round-tripping through the archive.
       - name: Upload APK and report
