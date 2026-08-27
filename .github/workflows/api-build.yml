@@ -1,0 +1,245 @@
+# Build pipeline for the Payments API component. Runs on merges to main only —
+# pull request validation will get its own workflow.
+#
+# The api-build and mutation-testing jobs run in parallel but contribute to a
+# SINGLE Chainloop attestation. That is what `attestation init --remote-state`
+# is for: the state lives on the server keyed by an attestation-id instead of on
+# one runner's disk, so any job holding the id can add evidence to it.
+
+name: API CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'payments-api/**'
+      - '.github/workflows/api-build.yml'
+
+permissions:
+  contents: read
+  # Lets the workflow request an OIDC token that Chainloop uses to identify the
+  # org, so no CHAINLOOP_TOKEN is needed anywhere below.
+  id-token: write
+
+jobs:
+  # Opens the attestation and hands its id to every other job. Kept separate and
+  # deliberately tiny: it also collects the runner context, so it must run before
+  # anything it should be describing.
+  attestation-init:
+    name: Open attestation
+    runs-on: ubuntu-latest
+    outputs:
+      attestation-id: ${{ steps.init.outputs.attestation-id }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+      - name: Initialize attestation
+        id: init
+        env:
+          # Used by the runner-context collector to verify the commit and its
+          # signature through the GitHub API, which is what the built-in
+          # source-commit policy reads. Unauthenticated calls get rate limited.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # pipefail matters here: without it the pipeline reports jq's status,
+          # so a failed init would still "succeed" with an empty id and every
+          # downstream `add` would fail instead, pointing at the wrong job.
+          set -o pipefail
+          id=$(chainloop attestation init --remote-state \
+            --project payments-api --workflow build -o json | jq -r .attestationID)
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::attestation init returned no attestation id"
+            exit 1
+          fi
+          echo "attestation-id=${id}" >> "$GITHUB_OUTPUT"
+          echo "Attestation ${id}"
+
+  api-build:
+    name: Payments API
+    needs: attestation-init
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: payments-api
+    strategy:
+      matrix:
+        java: [ '17' ]
+
+    env:
+      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of the SonarQube analysis
+      - name: Set up JDK ${{matrix.java}}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{matrix.java}}
+          distribution: 'temurin'
+          cache: maven
+      - name: Cache SonarQube packages
+        if: matrix.java == '17'
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+      - name: Build with Maven Wrapper
+        if: matrix.java != '17'
+        run: ./mvnw -B verify
+      # The same `verify` build also feeds the SonarQube analysis, so we don't pay
+      # for two full builds. JaCoCo already binds its `report` goal to
+      # `prepare-package`, so coverage is picked up from
+      # target/site/jacoco/jacoco.xml automatically. The step above only exists
+      # for additional matrix entries, which do not feed Sonar.
+      - name: Build and analyze
+        if: matrix.java == '17'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: ./mvnw -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=payments-api -Dsonar.projectName='payments-api'
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      - name: Attest application JAR
+        run: |
+          jar=$(ls target/*.jar)   # Boot's repackage leaves a .jar.original, which this does not match
+          chainloop attestation add --name app-binary --kind ARTIFACT \
+            --value "$jar" --attestation-id "$ATTESTATION_ID"
+
+      - name: Attest coverage report
+        run: |
+          chainloop attestation add --name coverage-report --kind JACOCO_XML \
+            --value target/site/jacoco/jacoco.xml --attestation-id "$ATTESTATION_ID"
+
+      # The sonar goal only UPLOADS the report; the server then processes it in a
+      # background Compute Engine task and the goal returns immediately. Without
+      # waiting, the transform below would query the Search API before the new
+      # analysis had landed and attest the PREVIOUS commit's issues — or, on the
+      # first run against a fresh project key, an empty result that reads as
+      # "clean". Polled rather than using -Dsonar.qualitygate.wait=true, which
+      # would also make a red Sonar quality gate fail the build; gating is the
+      # attestation policy's job, not Maven's.
+      - name: Wait for SonarQube analysis
+        if: matrix.java == '17'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+          task_url=$(sed -n 's/^ceTaskUrl=//p' target/sonar/report-task.txt)
+          for _ in $(seq 1 60); do
+            status=$(curl -sf -u "${SONAR_TOKEN}:" "$task_url" | jq -r .task.status)
+            echo "Compute Engine task: $status"
+            case "$status" in
+              SUCCESS) exit 0 ;;
+              FAILED|CANCELED) echo "::error::SonarQube analysis $status"; exit 1 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::timed out waiting for SonarQube analysis"; exit 1
+
+      # SonarQube's own output never leaves their server, so this pulls the
+      # issues and hotspots back out of the Search API and turns them into SARIF.
+      # --branch main is required by the transform's validation but is a no-op on
+      # Community Build, which has no branch analysis; verified against 26.8.0.
+      - name: Attest SonarQube report
+        if: matrix.java == '17'
+        env:
+          # The transform reads these two names; the repository secrets predate
+          # it and are named for the Maven plugin, hence the mapping.
+          SONARQUBE_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONARQUBE_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          chainloop transform sonarqube --project payments-api \
+            --branch main --output-file sq.sarif
+          chainloop attestation add --name sast-report --kind SARIF \
+            --value sq.sarif --attestation-id "$ATTESTATION_ID"
+
+  # Mutation testing is a separate job: a full PIT run takes considerably longer
+  # than the test suite, so it must not hold up the regular build.
+  mutation-testing:
+    name: Mutation testing (PIT)
+
+    needs: attestation-init
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: payments-api
+
+    env:
+      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+      - name: Run PIT mutation coverage
+        run: ./mvnw -B -P mutation verify
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # Attested straight from target/, not from the uploaded artifact below:
+      # upload-artifact zips whatever it is given, and the policy needs the XML.
+      - name: Attest mutation report
+        run: |
+          chainloop attestation add --name mutation-report --kind PITEST_XML \
+            --value target/pit-reports/mutations.xml --attestation-id "$ATTESTATION_ID"
+
+      # target/pit-reports/mutations.xml is the report Chainloop ingests;
+      # index.html in the same directory is the human-readable version.
+      - name: Upload PIT report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pit-reports
+          path: payments-api/target/pit-reports/
+          if-no-files-found: error
+
+  # Signs and pushes the attestation once both evidence-producing jobs are done.
+  # `success()` and `failure()` describe a job's own steps, so the upstream
+  # results have to be read from the needs context instead.
+  attestation-push:
+    name: Close attestation
+    needs: [ attestation-init, api-build, mutation-testing ]
+    # Skipped if init never produced an id: there is then nothing to close, and
+    # `reset` would fail on an empty --attestation-id.
+    if: always() && needs.attestation-init.result == 'success'
+    runs-on: ubuntu-latest
+
+    env:
+      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
+
+    steps:
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # A policy violation makes this step exit non-zero, which is what lets a
+      # gate block the pipeline rather than just annotate it.
+      - name: Push attestation
+        id: push
+        if: needs.api-build.result == 'success' && needs.mutation-testing.result == 'success'
+        run: chainloop attestation push --attestation-id "$ATTESTATION_ID"
+
+      # Catch-all rather than one step per outcome. A needs result can also be
+      # `skipped` — cancel a run after build finishes while mutation-testing is
+      # still queued and you get success + skipped, which no failure/cancelled
+      # condition matches, leaving the remote attestation open forever. Note
+      # `init --replace` would not rescue that: per the CLI it applies to local
+      # state only, so nothing would clear it but a manual reset.
+      - name: Reset attestation if it was not pushed
+        if: always() && steps.push.outcome != 'success'
+        run: |
+          trigger=failure
+          if [ "${{ needs.api-build.result }}" = "cancelled" ] \
+            || [ "${{ needs.mutation-testing.result }}" = "cancelled" ]; then
+            trigger=cancellation
+          fi
+          chainloop attestation reset --trigger "$trigger" --attestation-id "$ATTESTATION_ID"
