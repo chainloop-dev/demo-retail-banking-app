@@ -1,5 +1,10 @@
 # This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
 # For more information see: https://docs.github.com/en/actions/use-cases-and-examples/building-and-testing/building-and-testing-java-with-maven
+#
+# The build and mutation-testing jobs run in parallel but contribute to a SINGLE
+# Chainloop attestation. That is what `attestation init --remote-state` is for:
+# the state lives on the server keyed by an attestation-id instead of on one
+# runner's disk, so any job holding the id can add evidence to it.
 
 name: Java CI with Maven
 
@@ -15,17 +20,59 @@ on:
       - 'payments-api/**'
       - '.github/workflows/maven-build.yml'
 
-defaults:
-  run:
-    working-directory: payments-api
+permissions:
+  contents: read
+  # Lets the workflow request an OIDC token that Chainloop uses to identify the
+  # org, so no CHAINLOOP_TOKEN is needed anywhere below.
+  id-token: write
 
 jobs:
-  build:
-
+  # Opens the attestation and hands its id to every other job. Kept separate and
+  # deliberately tiny: it also collects the runner context and, on pull requests,
+  # CHAINLOOP_PR_INFO, so it must run before anything it should be describing.
+  attestation-init:
+    name: Open attestation
     runs-on: ubuntu-latest
+    outputs:
+      attestation-id: ${{ steps.init.outputs.attestation-id }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+      - name: Initialize attestation
+        id: init
+        env:
+          # Read directly by the PR metadata collector to enrich review state
+          # from the API; the event payload alone can miss reviewers added after
+          # the run was dispatched.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # pipefail matters here: without it the pipeline reports jq's status,
+          # so a failed init would still "succeed" with an empty id and every
+          # downstream `add` would fail instead, pointing at the wrong job.
+          set -o pipefail
+          id=$(chainloop attestation init --remote-state \
+            --project payments-api --workflow build -o json | jq -r .attestationID)
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::attestation init returned no attestation id"
+            exit 1
+          fi
+          echo "attestation-id=${id}" >> "$GITHUB_OUTPUT"
+          echo "Attestation ${id}"
+
+  build:
+    needs: attestation-init
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: payments-api
     strategy:
       matrix:
         java: [ '17' ]
+
+    env:
+      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
 
     steps:
       - uses: actions/checkout@v4
@@ -56,14 +103,52 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        run: ./mvnw -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=chainloop-dev_java-component-demo_e657147d-321b-4e10-bc1d-c06bb577d2df -Dsonar.projectName='java-component-demo'
+        run: ./mvnw -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=payments-api -Dsonar.projectName='payments-api'
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      - name: Attest application JAR
+        run: |
+          jar=$(ls target/*.jar)   # Boot's repackage leaves a .jar.original, which this does not match
+          chainloop attestation add --name app-binary --kind ARTIFACT \
+            --value "$jar" --attestation-id "$ATTESTATION_ID"
+
+      - name: Attest coverage report
+        run: |
+          chainloop attestation add --name coverage-report --kind JACOCO_XML \
+            --value target/site/jacoco/jacoco.xml --attestation-id "$ATTESTATION_ID"
+
+      # SonarQube's own output never leaves their server, so this pulls the
+      # issues and hotspots back out of the Search API and turns them into SARIF.
+      # Gated to main for the same reason the analysis is: SonarQube Community
+      # Build has no branch or PR analysis, so on a PR there is nothing to read.
+      - name: Attest SonarQube report
+        if: github.ref == 'refs/heads/main' && matrix.java == '17'
+        env:
+          # The transform reads these two names; the repository secrets predate
+          # it and are named for the Maven plugin, hence the mapping.
+          SONARQUBE_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONARQUBE_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          chainloop transform sonarqube --project payments-api \
+            --branch main --output-file sq.sarif
+          chainloop attestation add --name sast-report --kind SARIF \
+            --value sq.sarif --attestation-id "$ATTESTATION_ID"
 
   # Mutation testing is a separate job: a full PIT run takes considerably longer
   # than the test suite, so it must not hold up the regular build.
   mutation-testing:
     name: Mutation testing (PIT)
 
+    needs: attestation-init
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: payments-api
+
+    env:
+      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
 
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +160,17 @@ jobs:
           cache: maven
       - name: Run PIT mutation coverage
         run: ./mvnw -B -P mutation verify
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # Attested straight from target/, not from the uploaded artifact below:
+      # upload-artifact zips whatever it is given, and the policy needs the XML.
+      - name: Attest mutation report
+        run: |
+          chainloop attestation add --name mutation-report --kind PITEST_XML \
+            --value target/pit-reports/mutations.xml --attestation-id "$ATTESTATION_ID"
+
       # target/pit-reports/mutations.xml is the report Chainloop ingests;
       # index.html in the same directory is the human-readable version.
       - name: Upload PIT report
@@ -83,3 +179,33 @@ jobs:
           name: pit-reports
           path: payments-api/target/pit-reports/
           if-no-files-found: error
+
+  # Signs and pushes the attestation once both evidence-producing jobs are done.
+  # `success()` and `failure()` describe a job's own steps, so the upstream
+  # results have to be read from the needs context instead.
+  attestation-push:
+    name: Close attestation
+    needs: [ attestation-init, build, mutation-testing ]
+    if: always()
+    runs-on: ubuntu-latest
+
+    env:
+      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
+
+    steps:
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # A policy violation makes this step exit non-zero, which is what lets a
+      # gate block the pipeline rather than just annotate it.
+      - name: Push attestation
+        if: needs.build.result == 'success' && needs.mutation-testing.result == 'success'
+        run: chainloop attestation push --attestation-id "$ATTESTATION_ID"
+
+      - name: Reset attestation on failure
+        if: needs.build.result == 'failure' || needs.mutation-testing.result == 'failure'
+        run: chainloop attestation reset --attestation-id "$ATTESTATION_ID"
+
+      - name: Reset attestation on cancellation
+        if: needs.build.result == 'cancelled' || needs.mutation-testing.result == 'cancelled'
+        run: chainloop attestation reset --trigger cancellation --attestation-id "$ATTESTATION_ID"

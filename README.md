@@ -11,17 +11,18 @@ client, each built and attested independently.
 | Component | Directory | Stack |
 |---|---|---|
 | Payments API | [`payments-api/`](payments-api/) | Java 17, Spring Boot, Maven |
-| Mobile client | [`mobile-client/`](mobile-client/) | Java, Android — placeholder, not implemented yet |
+| Mobile client | [`mobile-client/`](mobile-client/) | Android — **placeholder, no source code**. See [`mobile-client/README.md`](mobile-client/README.md) |
 
 Each component owns its own build, configuration and documentation. Start with
-[`payments-api/README.md`](payments-api/README.md) for how to build, run and test the backend.
+[`payments-api/README.md`](payments-api/README.md) for how to build, run and test the backend, and
+[`mobile-client/README.md`](mobile-client/README.md) for what the mobile pipeline does and does not do.
 
 ## Repository-wide configuration
 
 | Path | Purpose |
 |---|---|
 | `.github/workflows/` | CI pipelines for every component. |
-| `.chainloop.yml` | Chainloop project this repository attests to. |
+| `.chainloop.yml` | Default Chainloop project. The mobile pipeline overrides it with `--project mobile-banking`. |
 | `.devcontainer/`, `.gitpod.yml` | Prebuilt development environments. |
 
 ## License
