@@ -33,6 +33,21 @@ spec:
     attestation:
       - ref: source-commit
 
+      # The two presence checks below assert the evidence exists at all, which
+      # is not the same as it passing. Disable the `mutation` profile and
+      # mutation-score has nothing to evaluate; without this that reads as
+      # silence rather than as a regression.
+      #
+      # They belong in this block, not under `materials`: both ship a single
+      # `kind: ATTESTATION` rego that walks predicate.materials looking for a
+      # JACOCO_XML/COBERTURA_XML or PITEST_XML entry. A material attachment is
+      # matched by kind, and no crafted material has kind ATTESTATION, so under
+      # `materials` these two match nothing and never evaluate at all — the
+      # contract validates and the run reports no result either way, which is
+      # exactly the silence they exist to break.
+      - ref: test-coverage-scan-present
+      - ref: mutation-scan-present
+
     materials:
       # INSTRUCTION is both JaCoCo's default and the policy's, and it is the
       # stricter reading: JaCoCo counts a line as covered when any instruction
@@ -41,13 +56,6 @@ spec:
         with:
           counter: INSTRUCTION
           threshold: "80"
-
-      # The two presence checks below assert the evidence exists at all, which
-      # is not the same as it passing. Disable the `mutation` profile and
-      # mutation-score has nothing to evaluate; without this that reads as
-      # silence rather than as a regression.
-      - ref: test-coverage-scan-present
-      - ref: mutation-scan-present
 
       # test_strength rather than mutation_coverage: it excludes NO_COVERAGE
       # mutants, so it does not re-penalise the reach gaps code-coverage above
