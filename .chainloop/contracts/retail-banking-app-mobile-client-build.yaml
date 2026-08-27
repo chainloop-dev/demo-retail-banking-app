@@ -1,22 +1,15 @@
-# Contract for the `mobile-client-build` workflow of the `retail-banking-app`
-# project (.github/workflows/mobile-build.yml).
-#
-# Read mobile-client/README.md before changing this. Two of that workflow's
-# steps are substitutions — the APK is a pre-built stand-in and the scan runs
-# out of band in the Oversecured tenant — but the attestation and the report
-# are real, and this contract governs those. The binary and the report are
-# deliberately different applications.
+# Contract for the `mobile-client-build` workflow (.github/workflows/mobile-build.yml).
+# See mobile-client/README.md: the APK is a pre-built stand-in and the scan runs
+# out of band, but the attestation and the report are real.
 apiVersion: chainloop.dev/v1
 kind: Contract
 metadata:
   name: retail-banking-app-mobile-client-build
 spec:
   materials:
-    # Stand-in for the Gradle release APK, staged to the path Gradle would write.
     - name: app-binary
       type: ARTIFACT
-    # Fetched live from Oversecured's API on every run, so this material is real
-    # evidence even though the scan itself did not happen in CI.
+    # Fetched live from Oversecured's API on every run.
     - name: sast-report
       type: OVERSECURED_JSON
 
@@ -25,15 +18,11 @@ spec:
       - ref: source-commit
 
   policyGroups:
-    # The same group the Java contract uses, which is the point: one named
-    # policy evaluates a SonarQube SARIF and an Oversecured JSON, and both land
-    # in one findings model.
+    # Same group the Java contract uses: one policy, two report formats, one
+    # findings model.
     - ref: sast
-
-    # No `cwes` here, unlike the sibling `payments-api-build` workflow.
-    # Oversecured findings carry neither
-    # CWE nor CVE, so the group would never populate for this component and
-    # would show as a permanently empty panel beside the Java one.
+    # No `cwes` here — Oversecured findings carry neither CWE nor CVE, so the
+    # group would never populate for this component.
 
   runner:
     type: GITHUB_ACTION

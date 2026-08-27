@@ -1,109 +1,37 @@
-# Contract for the `release` workflow of the `retail-banking-app` project
-# (.github/workflows/release.yml).
+# Contract for the `release` workflow (.github/workflows/release.yml).
 #
-# Unlike the two build contracts beside it, this one declares a single material.
-# The release attestation gates on the evidence the two build workflows already
-# contributed to this project version, and adds the one piece of evidence that
-# belongs to neither component on its own: the cross-component integration test
-# report.
+# The release gates on the compliance requirements the two build workflows
+# already produced for this project version — check-compliance-requirement
+# resolves them for `predicate.metadata.projectVersion`, the `+next` name both
+# builds attested under — plus the one piece of evidence that belongs to neither
+# component: the cross-component integration test report.
 #
-# How the gate reads the right version
-# ------------------------------------
-# check-compliance-requirement resolves the requirement statuses Chainloop
-# computed for `predicate.metadata.projectVersion`. That is the `+next` name:
-# release.yml attests under it and only renames the version to the tag
-# afterwards. So the statuses the gate reads are exactly the ones
-# payments-api-build and mobile-client-build produced during this cycle, which
-# is what makes a release gate possible without the release workflow re-running
-# any scan.
-#
-# `gate: true` makes a violation fail `attestation push`. In release.yml that
-# means the rename and the version-bump pull request never run, and the reset
-# step closes the attestation — a blocked release leaves nothing half-released.
-#
-# Requirement NAMES, not display names. The policy matches on `name`, so
-# `sast-analysis` and not its "No SAST Vulnerabilities" display name; the latter
-# is reported as "requirement not evaluated yet", which looks like a missing
-# scan rather than a typo.
-#
-# This gate is red today, deliberately
-# ------------------------------------
-# Same principle as the thresholds in the payments-api contract: it states what
-# a release should hold, not what this repo currently holds. As of the first
-# cycle all three requirements violate:
-#
-#   - code-coverage   partial. The threshold policy passes; its companion
-#                     presence check had never evaluated, because both presence
-#                     checks were attached per-material where an
-#                     `kind: ATTESTATION` policy can never match. Green once
-#                     that fix lands and the API rebuilds.
-#   - mutation-score  fail. Genuinely below the framework's test_strength >= 75,
-#                     which the presence-check fix does not change.
-#   - sast-analysis   fail. HIGH findings in both components, and additionally
-#                     sast-scan-present recognises no OVERSECURED_JSON material,
-#                     so the mobile component cannot satisfy it at all until
-#                     that policy learns the type. That part is not fixable from
-#                     this repo.
-#
-# The intended path out is a requirement exception rather than a weaker gate:
-# check-compliance-requirement skips any requirement carrying a
-# requirement_exception_id, so an accepted risk is recorded as an exception in
-# Chainloop instead of being edited out of the contract here.
-#
-# The integration test report
-# ---------------------------
-# `integration-report` is the cross-component evidence: the suite asserts the
-# contract between the mobile client and the Payments API, so it belongs to
-# neither component's build and is produced by the release pipeline itself.
-#
-# No BUILT-IN policy evaluates JUNIT_XML. `material-present` can assert such a
-# material exists and `test-coverage-scan-present` covers JaCoCo/Cobertura, but
-# nothing reads the test results, so a report full of failures would satisfy
-# every built-in. `test-results` in .chainloop/policies/ is the custom policy
-# that closes that, applied to the org from this repo by the same GitOps sync
-# that applies these contracts.
-#
-# Declaring the material makes it mandatory: an absent report fails the
-# attestation. That is the point — a release that skipped its integration suite
-# must not be able to pass by producing nothing.
+# The gate is red today by design. The intended path out is a requirement
+# exception recorded in Chainloop, which the policy skips, not a weaker contract.
 apiVersion: chainloop.dev/v1
 kind: Contract
 metadata:
   name: retail-banking-app-release
 spec:
   materials:
-    # Failsafe's report directory, zipped. The JUNIT_XML ingester reads a raw
-    # .xml, a .zip or a .tar.gz, so one material covers every *IT class rather
-    # than pinning a single file that a second suite would silently outgrow.
+    # Failsafe's report directory, zipped: the JUNIT_XML ingester reads a .zip,
+    # so one material covers every *IT class.
     - name: integration-report
       type: JUNIT_XML
 
   policies:
     materials:
-      # Any failing or errored test case blocks the release. `max_failures`
-      # defaults to 0 and is left at the default deliberately: a tolerance for
-      # cross-component failures is exactly the kind of thing that should be an
-      # explicit, approved requirement exception rather than a number quietly
-      # raised in a contract.
+      # Custom policy in .chainloop/policies/ — no built-in reads JUNIT_XML test
+      # results. `max_failures` is left at its default of 0.
       - ref: test-results
         gate: true
 
     attestation:
-      # Bare, matching the two build contracts. Note this does NOT satisfy the
-      # framework's source-commit-attestation requirement, which pins
-      # check_signature and check_author_verified — an evaluation without those
-      # inputs reads as NOT_AVAILABLE against it. Adding them is a separate
-      # change, and it belongs in the build contracts too, so the gate above is
-      # not extended to that requirement yet.
       - ref: source-commit
 
-      # One attachment rather than three: the policy takes a comma-separated
-      # list and reports one violation per failing requirement, so a single
-      # blocked release names everything that is wrong instead of stopping at
-      # the first. framework_name is pinned even though these three names are
-      # unique across the two enabled frameworks — it keeps the gate reading as
-      # a statement about Chainloop Best Practices rather than about whichever
-      # frameworks happen to be enabled.
+      # One attachment rather than three: the policy reports one violation per
+      # failing requirement, so a blocked release names all of them. Matches on
+      # `name`, not on the display name.
       - ref: check-compliance-requirement
         with:
           framework_name: chainloop-best-practices

@@ -1,17 +1,12 @@
-# GitOps sync for the Chainloop resources in .chainloop/: the workflow contracts
-# in contracts/, and the org-scoped custom policies in policies/ that those
-# contracts reference by name.
+# GitOps sync for .chainloop/: the workflow contracts in contracts/ and the
+# org-scoped custom policies in policies/ they reference by name.
 #
-# Git is the source of truth. This workflow only ever pushes repo -> server, so
-# an edit made in the Chainloop web UI is reverted by the next run rather than
-# merged. That is deliberate: two writers to one definition is how contract
-# drift starts.
+# Git is the source of truth — this only ever pushes repo -> server, so an edit
+# made in the Chainloop web UI is reverted by the next run rather than merged.
 #
-# `chainloop apply` is used rather than `workflow contract update`: it accepts
+# `chainloop apply` rather than `workflow contract update`: it accepts
 # `kind: Contract`, takes the whole directory in one invocation, and reports
-# `unchanged` when content matches, so the nightly run does not churn contract
-# revisions. (Note the `workflow contract apply` subcommand referenced by some
-# docs does not exist in the CLI — only create/delete/describe/list/update.)
+# `unchanged` when content matches, so the nightly run does not churn revisions.
 name: Chainloop Contract Sync
 
 on:
@@ -34,14 +29,10 @@ permissions:
   contents: read
 
 jobs:
-  # Catches a broken contract in review rather than on main. This has to be a
-  # server-side dry-run: `--offline` validates cross-references against the
-  # batch contents only, and every policy these contracts reference is a
-  # builtin that lives on the server, so offline validation can never resolve
-  # them and fails on every reference.
-  #
-  # Which means the job needs the token, and therefore cannot run on a fork PR.
-  # Skipped there rather than failing, since there is nothing it could check.
+  # Has to be a server-side dry-run: `--offline` validates cross-references
+  # against the batch contents only, and every policy these contracts reference
+  # is a builtin living on the server. That needs the token, so the job cannot
+  # run on a fork PR — skipped there rather than failing.
   validate:
     name: Validate resources
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
@@ -52,8 +43,7 @@ jobs:
       - name: Install Chainloop
         run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
 
-      # The CLI reads CHAINLOOP_TOKEN; the secret is named for what it is
-      # allowed to do, hence the mapping.
+      # The CLI reads CHAINLOOP_TOKEN; the secret is named for what it may do.
       - name: Dry-run apply
         env:
           CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_SYNC_CONTRACTS_TOKEN }}
@@ -69,10 +59,7 @@ jobs:
       - name: Install Chainloop
         run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
 
-      # No --org: an organization API token is already scoped to its org, so
-      # passing one would be redundant. Confirm on the first run — if it errors
-      # asking for an org, add `--org ${{ vars.CHAINLOOP_ORG }}` and set that
-      # variable to northwind-bank.
+      # No --org: an organization API token is already scoped to its org.
       - name: Apply resources
         env:
           CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_SYNC_CONTRACTS_TOKEN }}
