@@ -1,2 +1,17 @@
 organization: northwind-bank
 projectName: retail-banking-app
+# The version every workflow in this repo attests under, read automatically by
+# `chainloop attestation init` when no --version flag is passed. The CLI walks
+# up from its working directory looking for this file, so no workflow has to
+# name a version: the build pipelines and the release pipeline all land in the
+# same project version by construction.
+#
+# Read it as "[last released version]+next" — we are building whatever comes
+# after v2026.8. Nothing has actually been released yet; v2026.8 is a starting
+# point chosen so the first real tag is v2026.9, the product version the demo
+# uses.
+#
+# Do not edit by hand. Tagging a release renames this version to the tag and
+# then bumps this line to "<tag>+next" through a pull request. See
+# .github/workflows/release.yml.
+projectVersion: v2026.8+next

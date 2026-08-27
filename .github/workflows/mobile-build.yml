@@ -49,6 +49,9 @@ jobs:
       - name: Install Chainloop
         run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s 
 
+      # No --version: the CLI walks up for .chainloop.yml and uses its
+      # projectVersion, so this build lands in the same in-flight version as the
+      # payments API and the eventual release. See release.yml.
       - name: Initialize attestation
         id: init
         run: chainloop attestation init --project retail-banking-app --workflow mobile-client-build

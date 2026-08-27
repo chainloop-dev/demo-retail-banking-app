@@ -2,6 +2,7 @@
 
 [![Backend API Build](https://github.com/chainloop-dev/demo-retail-banking-app/actions/workflows/api-build.yml/badge.svg)](https://github.com/chainloop-dev/demo-retail-banking-app/actions/workflows/api-build.yml)
 [![Mobile Client Build](https://github.com/chainloop-dev/demo-retail-banking-app/actions/workflows/mobile-build.yml/badge.svg)](https://github.com/chainloop-dev/demo-retail-banking-app/actions/workflows/mobile-build.yml)
+[![Release](https://github.com/chainloop-dev/demo-retail-banking-app/actions/workflows/release.yml/badge.svg)](https://github.com/chainloop-dev/demo-retail-banking-app/actions/workflows/release.yml)
 
 An example application used to demonstrate software supply chain security with
 [Chainloop](https://chainloop.dev). It is a multi-component product: a backend API and a mobile
@@ -23,8 +24,18 @@ Each component owns its own build, configuration and documentation. Start with
 | Path | Purpose |
 |---|---|
 | `.github/workflows/` | CI pipelines for every component. |
-| `.chainloop.yml` | Chainloop organization and project. Every component of this repo attests to the one `retail-banking-app` project; each pipeline names its own workflow (`payments-api-build`, `mobile-client-build`) explicitly. |
-| `.chainloop/contracts/` | Contracts for both build workflows, synced to Chainloop by [`chainloop-sync.yml`](.github/workflows/chainloop-sync.yml). Git is the source of truth. |
+| `.chainloop.yml` | Chainloop organization, project and **project version**. Every component of this repo attests to the one `retail-banking-app` project; each pipeline names its own workflow (`payments-api-build`, `mobile-client-build`, `release`) explicitly, but none names a version — see below. |
+| `.chainloop/contracts/` | Contracts for all three workflows, synced to Chainloop by [`chainloop-sync.yml`](.github/workflows/chainloop-sync.yml). Git is the source of truth. |
+
+## Versioning and releases
+
+`.chainloop.yml` carries `projectVersion: <last release>+next`, and
+`chainloop attestation init` reads it whenever a pipeline passes no `--version`. No pipeline
+does, so every build of either component attests into the same in-flight project version.
+
+Pushing a `v*` tag runs [`release.yml`](.github/workflows/release.yml), which attests a release
+into that same version, renames it to the tag, and opens a pull request bumping
+`projectVersion` to `<tag>+next` for the next cycle. Do not edit that line by hand.
 
 ## License
 

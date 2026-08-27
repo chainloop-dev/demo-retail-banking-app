@@ -49,6 +49,9 @@ jobs:
           # so a failed init would still "succeed" with an empty id and every
           # downstream `add` would fail instead, pointing at the wrong job.
           set -o pipefail
+          # No --version: the CLI walks up for .chainloop.yml and uses its
+          # projectVersion, so this build lands in the same in-flight version as
+          # the mobile client and the eventual release. See release.yml.
           id=$(chainloop attestation init --remote-state \
             --project retail-banking-app --workflow payments-api-build -o json | jq -r .attestationID)
           if [ -z "$id" ] || [ "$id" = "null" ]; then
