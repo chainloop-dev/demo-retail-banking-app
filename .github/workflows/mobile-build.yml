@@ -1,9 +1,8 @@
 # Pipeline for the mobile client component.
 #
-# The mobile client is a placeholder: there are no Android sources in this
-# repository and no scanner runs here. Two of the four steps below are therefore
-# substitutions rather than the real thing, and they are labelled as such.
-# See mobile-client/README.md for what is real and what is not, and why.
+# Placeholder component: there are no Android sources here and no scanner runs in
+# CI, so two of the steps below are substitutions and labelled as such. See
+# mobile-client/README.md for what is real and what is not.
 name: Mobile Client Build
 
 on:
@@ -12,23 +11,21 @@ on:
     paths:
       - 'mobile-client/**'
       - '.github/workflows/mobile-build.yml'
-  # Manual runs, e.g. to re-attest after a contract change without a code push.
   workflow_dispatch:
 
 permissions:
   contents: read
-  # Lets the workflow request an OIDC token that Chainloop uses to identify the
-  # org, so no CHAINLOOP_TOKEN is needed anywhere below.
+  # OIDC token Chainloop uses to identify the org, so no CHAINLOOP_TOKEN is
+  # needed below.
   id-token: write
 
 env:
-  # The pre-built binary standing in for a Gradle build output, and the path
-  # Gradle would have written the real one to.
+  # Pre-built binary, and the path Gradle would have written the real one to.
   PREBUILT_APK: mobile-client/DecodeConfigSampleAPI-Kotlin.apk
   APK: mobile-client/build/outputs/apk/release/mobile-banking-release.apk
   REPORT: mobile-client/build/reports/oversecured/mobile-banking-oversecured.json
-  # Oversecured SampleApp 3.4.0 and the scan already completed against it in the
-  # tenant. Deliberately not the same application as the APK above.
+  # Oversecured SampleApp 3.4.0, already scanned in the tenant. Deliberately not
+  # the same application as the APK above.
   OVERSECURED_APP_ID: 6c69e813-32f5-49f1-bf53-568d63fc309d
   OVERSECURED_SCAN_ID: e62f4c1b-8ca7-4c7a-8ca8-7b7fd33a6b14
   OVERSECURED_CLI: '@oversecured/cli@0.1.0-beta.4'
@@ -49,16 +46,15 @@ jobs:
       - name: Install Chainloop
         run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s 
 
-      # No --version: the CLI walks up for .chainloop.yml and uses its
-      # projectVersion, so this build lands in the same in-flight version as the
-      # payments API and the eventual release. See release.yml.
+      # No --version: the CLI picks up projectVersion from .chainloop.yml, so
+      # this build lands in the same in-flight version as the payments API and
+      # the eventual release.
       - name: Initialize attestation
         id: init
         run: chainloop attestation init --project retail-banking-app --workflow mobile-client-build
 
-      # SUBSTITUTION 1 of 2: no Android sources exist, so nothing is compiled.
-      # A real pipeline replaces this step with `./gradlew assembleRelease` and
-      # changes nothing else in this job.
+      # SUBSTITUTION 1 of 2: a real pipeline replaces this with
+      # `./gradlew assembleRelease` and changes nothing else.
       - name: Stage release APK (stands in for the Android build)
         run: |
           mkdir -p "$(dirname "$APK")"
@@ -66,16 +62,15 @@ jobs:
           sha256sum "$APK"
 
       # SUBSTITUTION 2 of 2: Oversecured is cloud-only and metered, so the scan
-      # is performed once out of band in the tenant rather than per CI run.
+      # ran once out of band rather than per CI run.
       - name: Scan APK (performed out of band in the Oversecured tenant)
         run: |
           echo "No scan runs in CI. Oversecured scan ${OVERSECURED_SCAN_ID}"
           echo "of app ${OVERSECURED_APP_ID} already covers this component;"
           echo "the next step fetches its report."
 
-      # Real: the report is fetched live from Oversecured's API on every run.
-      # --output pins a stable filename; without it the CLI derives a
-      # timestamped one that the following steps would have to glob for.
+      # Real: fetched live on every run. --output pins a stable filename;
+      # otherwise the CLI derives a timestamped one.
       - name: Fetch Oversecured report
         env:
           OVERSECURED_API_TOKEN: ${{ secrets.OVERSECURED_API_TOKEN }}
@@ -86,9 +81,8 @@ jobs:
             --format json \
             --output "$REPORT"
 
-      # Real: from here on this is exactly what a customer's pipeline does.
-      # Both materials land in one signed attestation — that statement, not any
-      # digest inside the report, is what binds the binary to its scan.
+      # Real from here on. Both materials land in one signed attestation — that
+      # statement, not any digest inside the report, binds the binary to its scan.
       - name: Attest APK
         run: chainloop attestation add --name app-binary --kind ARTIFACT --value "$APK"
 
@@ -99,11 +93,9 @@ jobs:
         if: success()
         run: chainloop attestation push
 
-      # Both resets are gated on init having succeeded. A bare failure()/cancelled()
-      # also fires when checkout, Node setup or the CLI install failed — cases with
-      # no attestation to reset, and in the install case no `chainloop` binary
-      # either, so the reset would exit non-zero on top of the real failure and
-      # bury it.
+      # Both resets are gated on init: a bare failure()/cancelled() also fires
+      # when checkout, Node setup or the CLI install failed, where there is no
+      # attestation to reset and no `chainloop` binary to do it with.
       - name: Reset attestation on failure
         if: failure() && steps.init.outcome == 'success'
         run: chainloop attestation reset
