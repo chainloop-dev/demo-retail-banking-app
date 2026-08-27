@@ -19,9 +19,6 @@ spec:
     - name: sast-report
       type: OVERSECURED_JSON
 
-  runner:
-    type: GITHUB_ACTION
-
   policies:
     attestation:
       - ref: source-commit
@@ -35,3 +32,6 @@ spec:
     # No `cwes` here, unlike payments-api. Oversecured findings carry neither
     # CWE nor CVE, so the group would never populate for this component and
     # would show as a permanently empty panel beside the Java one.
+
+  runner:
+    type: GITHUB_ACTION
