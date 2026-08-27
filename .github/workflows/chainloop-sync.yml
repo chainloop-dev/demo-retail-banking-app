@@ -50,9 +50,11 @@ jobs:
       - name: Install Chainloop
         run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
 
+      # The CLI reads CHAINLOOP_TOKEN; the secret is named for what it is
+      # allowed to do, hence the mapping.
       - name: Dry-run apply
         env:
-          CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_TOKEN }}
+          CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_SYNC_CONTRACTS_TOKEN }}
         run: chainloop apply -f .chainloop/contracts/ --dry-run
 
   apply:
@@ -71,5 +73,5 @@ jobs:
       # variable to northwind-bank.
       - name: Apply contracts
         env:
-          CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_TOKEN }}
+          CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_SYNC_CONTRACTS_TOKEN }}
         run: chainloop apply -f .chainloop/contracts/
