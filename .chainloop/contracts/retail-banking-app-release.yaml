@@ -20,9 +20,6 @@ spec:
     - name: integration-report
       type: JUNIT_XML
 
-    # The Payments API image built and published to GHCR by the release
-    # workflow. Attested by reference — the value is the immutable digest the
-    # CLI resolved, not an upload.
     - name: container-image
       type: CONTAINER_IMAGE
 
