@@ -50,7 +50,7 @@ jobs:
           # downstream `add` would fail instead, pointing at the wrong job.
           set -o pipefail
           id=$(chainloop attestation init --remote-state \
-            --project payments-api --workflow build -o json | jq -r .attestationID)
+            --project retail-banking-app --workflow payments-api-build -o json | jq -r .attestationID)
           if [ -z "$id" ] || [ "$id" = "null" ]; then
             echo "::error::attestation init returned no attestation id"
             exit 1

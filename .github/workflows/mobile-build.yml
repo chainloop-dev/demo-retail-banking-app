@@ -51,7 +51,7 @@ jobs:
 
       - name: Initialize attestation
         id: init
-        run: chainloop attestation init --project mobile-banking --workflow build
+        run: chainloop attestation init --project retail-banking-app --workflow mobile-client-build
 
       # SUBSTITUTION 1 of 2: no Android sources exist, so nothing is compiled.
       # A real pipeline replaces this step with `./gradlew assembleRelease` and
