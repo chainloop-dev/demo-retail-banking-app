@@ -400,11 +400,24 @@
                 <param>org.springframework.samples.petclinic.*</param>
               </targetTests>
               <!-- Container-backed tests are too slow to re-run once per mutant and
-                need a Docker daemon, so they don't take part in the mutation run. -->
+                need a Docker daemon, so they don't take part in the mutation run.
+
+                The `integration` package is the cross-component suite. PIT does not
+                honour Surefire's include patterns; it scans the test classpath against
+                targetTests, so the `*IT` naming that keeps the suite out of this
+                component's build does not keep it out of the mutation run. It has to be
+                named here as well. Excluded as a package rather than a class so a
+                second `*IT` does not silently break the run.
+
+                It matters more than a slow test would: the suite is deliberately red
+                (that failure is what the release gate in .github/workflows/release.yml
+                reads), and PIT aborts on a non-green suite instead of producing a
+                report, taking the attestation of mutations.xml down with it. -->
               <excludedTestClasses>
                 <param>org.springframework.samples.petclinic.MySqlIntegrationTests</param>
                 <param>org.springframework.samples.petclinic.PostgresIntegrationTests</param>
                 <param>org.springframework.samples.petclinic.PetClinicConcurrencyTests</param>
+                <param>org.springframework.samples.petclinic.integration.*</param>
               </excludedTestClasses>
               <outputFormats>
                 <param>HTML</param>
