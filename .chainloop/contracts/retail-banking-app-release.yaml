@@ -1,0 +1,28 @@
+# Contract for the `release` workflow of the `retail-banking-app` project
+# (.github/workflows/release.yml).
+#
+# Deliberately empty. Unlike the two build contracts beside it, this one
+# declares no materials and no policies: the release attestation currently
+# carries only its runner context and the release version, which is enough to
+# make the release exist in Chainloop and give later evidence something to hang
+# off.
+#
+# What is expected to land here, and why it has not yet:
+#
+#   - The integration test report for the combined components, as JUNIT_XML.
+#     Held back because no built-in policy consumes JUNIT_XML today, so
+#     declaring the material would attach evidence that nothing evaluates —
+#     the report would be stored and signed but never gated.
+#   - The publish and deployment gate policies, which read the requirement
+#     statuses produced by the two build workflows.
+#
+# Adding a material here makes it mandatory: an absent one fails the
+# attestation. So each addition needs the release workflow to produce it
+# unconditionally first.
+apiVersion: chainloop.dev/v1
+kind: Contract
+metadata:
+  name: retail-banking-app-release
+spec:
+  runner:
+    type: GITHUB_ACTION
