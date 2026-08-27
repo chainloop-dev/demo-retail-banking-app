@@ -1,0 +1,77 @@
+# GitOps sync for the Chainloop contracts in .chainloop/contracts/.
+#
+# Git is the source of truth. This workflow only ever pushes repo -> server, so
+# an edit made in the Chainloop web UI is reverted by the next run rather than
+# merged. That is deliberate: two writers to one definition is how contract
+# drift starts.
+#
+# `chainloop apply` is used rather than `workflow contract update`: it accepts
+# `kind: Contract`, takes the whole directory in one invocation, and reports
+# `unchanged` when content matches, so the nightly run does not churn contract
+# revisions. (Note the `workflow contract apply` subcommand referenced by some
+# docs does not exist in the CLI — only create/delete/describe/list/update.)
+name: Chainloop Contract Sync
+
+on:
+  pull_request:
+    paths:
+      - '.chainloop/contracts/**'
+      - '.github/workflows/chainloop-sync.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - '.chainloop/contracts/**'
+      - '.github/workflows/chainloop-sync.yml'
+  # Reasserts git over any UI edit, and catches a contract that stopped
+  # validating because a policy it references changed server-side.
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Catches a broken contract in review rather than on main. This has to be a
+  # server-side dry-run: `--offline` validates cross-references against the
+  # batch contents only, and every policy these contracts reference is a
+  # builtin that lives on the server, so offline validation can never resolve
+  # them and fails on every reference.
+  #
+  # Which means the job needs the token, and therefore cannot run on a fork PR.
+  # Skipped there rather than failing, since there is nothing it could check.
+  validate:
+    name: Validate contracts
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # The CLI reads CHAINLOOP_TOKEN; the secret is named for what it is
+      # allowed to do, hence the mapping.
+      - name: Dry-run apply
+        env:
+          CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_SYNC_CONTRACTS_TOKEN }}
+        run: chainloop apply -f .chainloop/contracts/ --dry-run
+
+  apply:
+    name: Apply contracts
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # No --org: an organization API token is already scoped to its org, so
+      # passing one would be redundant. Confirm on the first run — if it errors
+      # asking for an org, add `--org ${{ vars.CHAINLOOP_ORG }}` and set that
+      # variable to northwind-bank.
+      - name: Apply contracts
+        env:
+          CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_SYNC_CONTRACTS_TOKEN }}
+        run: chainloop apply -f .chainloop/contracts/
