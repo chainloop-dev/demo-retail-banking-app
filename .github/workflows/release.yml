@@ -20,7 +20,18 @@
 # version (no scan is re-run here), and the cross-component integration suite,
 # which runs below because it belongs to neither component.
 #
-# Three jobs share ONE attestation via `init --remote-state`, same shape as
+# It also builds the Payments API container image and publishes it to GHCR, then
+# attests the digest, so the artifact that actually ships is part of the release
+# attestation rather than a side effect of it. That happens after the integration
+# suite has cleared its gate — `test-results` is a material policy, so it is
+# evaluated by `attestation add` and a red suite stops the pipeline before
+# anything is packaged. The compliance requirements gate even earlier:
+# check-compliance-requirement is a builtin that declares no attestation_phases,
+# and an empty list means every phase, so it is evaluated at `attestation init`
+# as well as at the push. A version missing sast/coverage/mutation therefore
+# fails the first job and never reaches the build at all.
+#
+# Four jobs share ONE attestation via `init --remote-state`, same shape as
 # api-build.yml.
 
 name: Release
@@ -155,12 +166,87 @@ jobs:
           chainloop attestation add --name integration-report --kind JUNIT_XML \
             --value failsafe-reports.zip --attestation-id "$ATTESTATION_ID"
 
+  # The shippable artifact. api-build.yml attests the JAR on every push to main;
+  # the image is built here instead, once, from the tagged source, so its tag is
+  # the release tag and its digest lands in the release attestation.
+  #
+  # Runs after integration-tests so nothing is packaged for a release that cannot
+  # ship. That dependency has teeth: the contract's `test-results` gate is
+  # evaluated by `attestation add`, not deferred to the push, so a failing suite
+  # fails the add step and this job never starts. The Maven run staying green is
+  # irrelevant — the gate is what blocks.
+  #
+  # Note this recompiles the application: the JAR inside the image is a second
+  # build of the same commit, not the byte-identical one api-build.yml attested.
+  container-image:
+    name: Container image
+    needs: [ attestation-init, integration-tests ]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: payments-api
+
+    permissions:
+      contents: read
+      id-token: write
+      # Pushing to ghcr.io. No registry secret is needed beyond GITHUB_TOKEN.
+      packages: write
+
+    env:
+      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
+      IMAGE: ghcr.io/${{ github.repository_owner }}/payments-api:${{ needs.attestation-init.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      # Also writes ~/.docker/config.json, which is how the Chainloop CLI below
+      # authenticates when it resolves the digest of this private GHCR image.
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Paketo buildpacks via the Spring Boot plugin, so there is no Dockerfile
+      # to keep in sync with the build. `publish=true` pushes straight to GHCR
+      # rather than loading into the local daemon first.
+      #
+      # Tests are skipped on purpose: the unit suite already ran in api-build.yml
+      # for this commit, and the integration suite ran — and cleared its gate —
+      # in the job this one depends on.
+      - name: Build and publish the container image
+        run: |
+          ./mvnw -B spring-boot:build-image -DskipTests \
+            -Dspring-boot.build-image.imageName="$IMAGE" \
+            -Dspring-boot.build-image.publish=true \
+            -Ddocker.publishRegistry.username='${{ github.actor }}' \
+            -Ddocker.publishRegistry.password='${{ secrets.GITHUB_TOKEN }}'
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # Attested by reference, not by upload: the CLI resolves the tag to its
+      # immutable digest against the registry, so the evidence points at the
+      # exact image even after the tag is moved.
+      - name: Attest container image
+        run: |
+          chainloop attestation add --name container-image --kind CONTAINER_IMAGE \
+            --value "$IMAGE" --attestation-id "$ATTESTATION_ID"
+
   # Closes the attestation and, only if it was accepted, promotes the version.
   # `success()`/`failure()` describe a job's own steps, so upstream results are
   # read from the needs context instead.
   release:
     name: Release attestation
-    needs: [ attestation-init, integration-tests ]
+    needs: [ attestation-init, integration-tests, container-image ]
     # Nothing to close if init produced no id, and `reset` would fail on an
     # empty --attestation-id.
     if: always() && needs.attestation-init.result == 'success'
@@ -187,7 +273,7 @@ jobs:
       # this exit non-zero, which is what lets the gate block the pipeline.
       - name: Push attestation
         id: push
-        if: needs.integration-tests.result == 'success'
+        if: needs.integration-tests.result == 'success' && needs.container-image.result == 'success'
         run: chainloop attestation push --attestation-id "$ATTESTATION_ID"
 
       # A plain control-plane call rather than an attestation, so it
@@ -237,7 +323,8 @@ jobs:
         if: always() && steps.push.outcome != 'success'
         run: |
           trigger=failure
-          if [ "${{ needs.integration-tests.result }}" = "cancelled" ]; then
+          if [ "${{ needs.integration-tests.result }}" = "cancelled" ] \
+            || [ "${{ needs.container-image.result }}" = "cancelled" ]; then
             trigger=cancellation
           fi
           chainloop attestation reset --trigger "$trigger" --attestation-id "$ATTESTATION_ID"
