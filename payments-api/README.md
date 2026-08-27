@@ -72,6 +72,32 @@ At development time you can also run the test applications defined as `main()` m
 and double as integration tests against the respective database — the MySQL tests start the
 database with Testcontainers, the Postgres tests with Docker Compose.
 
+## Cross-component integration testing
+
+`MobileClientContractIT` asserts the contract the mobile client depends on this API to honour.
+It is the only suite here that says something about **both** components of the product, which
+is why the release pipeline runs it rather than either component's build.
+
+It sits behind the `integration` Maven profile, and its `*IT` name keeps it out of Surefire's
+default includes, so `./mvnw verify` never picks it up:
+
+```bash
+./mvnw -P integration verify
+```
+
+Reports land in `target/failsafe-reports/` — the `TEST-*.xml` files are what Chainloop ingests,
+as a single zipped `JUNIT_XML` material. Like the mutation run, it is report-only: the profile
+sets `testFailureIgnore` and does not bind `failsafe:verify`, so a failing test does not break
+the Maven build. That matters more here than it does for PIT — a Maven failure would abort
+before the report could be attested, and the release gate would never see the failure it exists
+to block on.
+
+**One of its tests fails on purpose.** `paymentsHistoryEndpointServesTheMobileClient` calls an
+endpoint the API has not shipped. That is the defect class a component-scoped suite cannot
+catch: both sides pass their own tests and the product is still broken. The `test-results`
+policy in [`.chainloop/policies/`](../.chainloop/policies/) reads that failure and blocks the
+release.
+
 ## Mutation testing
 
 Coverage tells you which lines ran; mutation testing tells you whether the tests would notice

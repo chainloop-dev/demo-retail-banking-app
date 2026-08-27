@@ -25,13 +25,19 @@
 # It closes as soon as the bump lands, and it is why the bump is a PR rather
 # than a push: the version in git stays reviewable.
 #
-# The attestation itself currently carries nothing but its runner context, per
-# .chainloop/contracts/retail-banking-app-release.yaml — see the comment there
-# for what is expected to land and what is blocking it.
+# What this pipeline gates on
+# ---------------------------
+# Two things, per .chainloop/contracts/retail-banking-app-release.yaml:
 #
-# Single job, so the attestation state stays local. The --remote-state
-# machinery in api-build.yml exists only because that pipeline fans evidence
-# out across three jobs; there is nothing to share here.
+#   - the compliance requirements the two build workflows already produced for
+#     this project version — no scan is re-run here;
+#   - the cross-component integration suite, which runs below because it
+#     belongs to neither component on its own.
+#
+# Three jobs sharing ONE attestation, which is what `init --remote-state` is
+# for: the state lives on the server keyed by an attestation-id instead of on a
+# single runner's disk, so the job that produces the integration report and the
+# job that closes the release can both address it. Same shape as api-build.yml.
 
 name: Release
 
@@ -39,7 +45,8 @@ on:
   push:
     tags: [ 'v*' ]
   # Cutting a tag is the normal path. Manual runs exist to re-attest a release
-  # without moving or recreating its tag.
+  # without moving or recreating its tag — which is also how a release blocked
+  # by the gate is retried once a requirement exception has been recorded.
   workflow_dispatch:
     inputs:
       version:
@@ -55,15 +62,16 @@ permissions:
   id-token: write
 
 jobs:
-  release:
-    name: Release attestation
+  # Opens the attestation and resolves everything the later jobs need. Kept
+  # separate and deliberately tiny: it also collects the runner context, so it
+  # must run before anything it should be describing.
+  attestation-init:
+    name: Open attestation
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      id-token: write
-      # Both for the bump pull request.
-      pull-requests: write
+    outputs:
+      attestation-id: ${{ steps.init.outputs.attestation-id }}
+      tag: ${{ steps.tag.outputs.tag }}
+      current-version: ${{ steps.project_version.outputs.current_version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -84,8 +92,8 @@ jobs:
           fi
           echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
 
-      # Captured before anything can rewrite the file, because the rename below
-      # needs the name the builds actually attested under.
+      # Captured before anything can rewrite the file, because the rename in the
+      # release job needs the name the builds actually attested under.
       - name: Read in-flight project version
         id: project_version
         run: |
@@ -109,22 +117,130 @@ jobs:
           # limited.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          chainloop attestation init \
-            --project retail-banking-app --workflow release --release
+          # pipefail matters here: without it the pipeline reports jq's status,
+          # so a failed init would still "succeed" with an empty id and every
+          # downstream `add` would fail instead, pointing at the wrong job.
+          set -o pipefail
+          id=$(chainloop attestation init --remote-state --release \
+            --project retail-banking-app --workflow release -o json | jq -r .attestationID)
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::attestation init returned no attestation id"
+            exit 1
+          fi
+          echo "attestation-id=${id}" >> "$GITHUB_OUTPUT"
+          echo "Attestation ${id}"
 
+  # The cross-component integration suite. It asserts the contract between the
+  # mobile client and the Payments API, so it belongs to neither component's
+  # build pipeline and runs here, once, against the versions being released.
+  #
+  # Report-only by design: the `integration` Maven profile sets
+  # testFailureIgnore and does not bind failsafe:verify, so a failing test still
+  # leaves this job green and the report gets attested. That is deliberate — a
+  # Maven failure here would abort before the evidence could be added, and the
+  # release gate would never see the failure it is supposed to block on. The
+  # blocking happens at `attestation push`, not in Maven.
+  integration-tests:
+    name: Integration tests
+    needs: attestation-init
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: payments-api
+
+    env:
+      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run the cross-component integration suite
+        run: ./mvnw -B -P integration verify
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # The JUNIT_XML ingester reads .xml entries out of a zip, so the whole
+      # report directory travels as one material and a second *IT class needs no
+      # change here. -j flattens the paths, which the ingester does not care
+      # about — it matches on the .xml suffix alone. Fails loudly when the glob
+      # matches nothing, so a suite that silently produced no report cannot
+      # reach the gate as an absent-but-unnoticed material.
+      - name: Package the Failsafe reports
+        run: zip -q -j failsafe-reports.zip target/failsafe-reports/*.xml
+
+      - name: Attest integration test report
+        run: |
+          chainloop attestation add --name integration-report --kind JUNIT_XML \
+            --value failsafe-reports.zip --attestation-id "$ATTESTATION_ID"
+
+      # Mirrors the PIT report upload in api-build.yml. upload-artifact always
+      # zips, so the download is failsafe-reports.zip; the attestation above
+      # consumed the zip this job built rather than round-tripping through it.
+      - name: Upload integration reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-reports
+          path: payments-api/target/failsafe-reports/
+          if-no-files-found: warn
+
+  # Closes the attestation and, only if it was accepted, promotes the version.
+  # `success()` and `failure()` describe a job's own steps, so the upstream
+  # results have to be read from the needs context instead.
+  release:
+    name: Release attestation
+    needs: [ attestation-init, integration-tests ]
+    # Skipped if init never produced an id: there is then nothing to close, and
+    # `reset` would fail on an empty --attestation-id.
+    if: always() && needs.attestation-init.result == 'success'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+      # Both for the bump pull request.
+      pull-requests: write
+
+    env:
+      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
+      RELEASE_TAG: ${{ needs.attestation-init.outputs.tag }}
+      CURRENT_VERSION: ${{ needs.attestation-init.outputs.current-version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # Where the release is allowed to proceed or not. A policy violation makes
+      # this exit non-zero, which is what lets the gate block the pipeline
+      # rather than just annotate it.
       - name: Push attestation
         id: push
-        run: chainloop attestation push
+        if: needs.integration-tests.result == 'success'
+        run: chainloop attestation push --attestation-id "$ATTESTATION_ID"
 
       # Only now, with the release attestation in, does the version take the
       # tag's name. Unlike init and push this is a plain control-plane call
       # rather than an attestation, so it authenticates with a token instead of
       # the OIDC identity.
+      #
+      # Explicitly gated on the push having succeeded rather than relying on
+      # step failure to stop the run: when the push is SKIPPED — which is what
+      # happens when the integration suite job failed — the following steps
+      # would otherwise still execute and release a version whose gate never ran.
       - name: Rename project version to the release tag
+        if: steps.push.outcome == 'success'
         env:
           CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_TOKEN }}
-          CURRENT_VERSION: ${{ steps.project_version.outputs.current_version }}
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           chainloop project version update --project retail-banking-app \
             --name "$CURRENT_VERSION" --new-name "$RELEASE_TAG"
@@ -133,39 +249,43 @@ jobs:
       # the next cycle unopened — recoverable by re-running or editing the file
       # by hand.
       - name: Bump project version for the next cycle
-        env:
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        if: steps.push.outcome == 'success'
         run: .github/workflows/utils/bump-project-version.sh "$RELEASE_TAG"
 
       - name: Open the bump pull request
+        if: steps.push.outcome == 'success'
         uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
         with:
-          commit-message: "chore(chainloop): bump projectVersion to ${{ steps.tag.outputs.tag }}+next"
+          commit-message: "chore(chainloop): bump projectVersion to ${{ env.RELEASE_TAG }}+next"
           signoff: true
           base: main
           branch: chainloop/bump-project-version
-          title: "chore(chainloop): open the cycle after ${{ steps.tag.outputs.tag }}"
+          title: "chore(chainloop): open the cycle after ${{ env.RELEASE_TAG }}"
           body: |
-            `${{ steps.tag.outputs.tag }}` is released and its project version
+            `${{ env.RELEASE_TAG }}` is released and its project version
             renamed. This points `.chainloop.yml` at the next cycle, so builds
-            of both components attest under
-            `${{ steps.tag.outputs.tag }}+next`.
+            of both components attest under `${{ env.RELEASE_TAG }}+next`.
 
             Until this merges, builds keep attesting under
-            `${{ steps.project_version.outputs.current_version }}`, which is now
-            the released version.
+            `${{ env.CURRENT_VERSION }}`, which is now the released version.
           labels: automated
 
-      # Both resets are gated on init having succeeded. A bare failure()/cancelled()
-      # also fires when checkout or the CLI install failed — cases with no
-      # attestation to reset, and in the install case no `chainloop` binary
-      # either, so the reset would exit non-zero on top of the real failure and
-      # bury it. Also gated on the push not having landed: once it has, the
-      # attestation is closed and a reset would fail against nothing.
-      - name: Reset attestation on failure
-        if: failure() && steps.init.outcome == 'success' && steps.push.outcome != 'success'
-        run: chainloop attestation reset
-
-      - name: Reset attestation on cancellation
-        if: cancelled() && steps.init.outcome == 'success' && steps.push.outcome != 'success'
-        run: chainloop attestation reset --trigger cancellation
+      # Catch-all rather than one step per outcome. A needs result can also be
+      # `skipped` — cancel a run after init finishes while integration-tests is
+      # still queued and no failure/cancelled condition matches, leaving the
+      # remote attestation open forever. Note `init --replace` would not rescue
+      # that: per the CLI it applies to local state only, so nothing would clear
+      # it but a manual reset.
+      #
+      # A blocked release lands here too: the gate failed the push, so the
+      # rename and the bump PR never ran and this closes the attestation. That
+      # is what "a blocked release leaves nothing half-released" means in
+      # practice.
+      - name: Reset attestation if it was not pushed
+        if: always() && steps.push.outcome != 'success'
+        run: |
+          trigger=failure
+          if [ "${{ needs.integration-tests.result }}" = "cancelled" ]; then
+            trigger=cancellation
+          fi
+          chainloop attestation reset --trigger "$trigger" --attestation-id "$ATTESTATION_ID"

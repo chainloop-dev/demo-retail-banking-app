@@ -1,4 +1,6 @@
-# GitOps sync for the Chainloop contracts in .chainloop/contracts/.
+# GitOps sync for the Chainloop resources in .chainloop/: the workflow contracts
+# in contracts/, and the org-scoped custom policies in policies/ that those
+# contracts reference by name.
 #
 # Git is the source of truth. This workflow only ever pushes repo -> server, so
 # an edit made in the Chainloop web UI is reverted by the next run rather than
@@ -15,12 +17,12 @@ name: Chainloop Contract Sync
 on:
   pull_request:
     paths:
-      - '.chainloop/contracts/**'
+      - '.chainloop/**'
       - '.github/workflows/chainloop-sync.yml'
   push:
     branches: [ main ]
     paths:
-      - '.chainloop/contracts/**'
+      - '.chainloop/**'
       - '.github/workflows/chainloop-sync.yml'
   # Reasserts git over any UI edit, and catches a contract that stopped
   # validating because a policy it references changed server-side.
@@ -41,7 +43,7 @@ jobs:
   # Which means the job needs the token, and therefore cannot run on a fork PR.
   # Skipped there rather than failing, since there is nothing it could check.
   validate:
-    name: Validate contracts
+    name: Validate resources
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -55,10 +57,10 @@ jobs:
       - name: Dry-run apply
         env:
           CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_SYNC_CONTRACTS_TOKEN }}
-        run: chainloop apply -f .chainloop/contracts/ --dry-run
+        run: chainloop apply -f .chainloop/ --dry-run
 
   apply:
-    name: Apply contracts
+    name: Apply resources
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -71,7 +73,7 @@ jobs:
       # passing one would be redundant. Confirm on the first run — if it errors
       # asking for an org, add `--org ${{ vars.CHAINLOOP_ORG }}` and set that
       # variable to northwind-bank.
-      - name: Apply contracts
+      - name: Apply resources
         env:
           CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_SYNC_CONTRACTS_TOKEN }}
-        run: chainloop apply -f .chainloop/contracts/
+        run: chainloop apply -f .chainloop/
