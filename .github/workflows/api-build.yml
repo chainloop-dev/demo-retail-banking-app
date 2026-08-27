@@ -9,9 +9,6 @@ name: Backend API Build
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'payments-api/**'
-      - '.github/workflows/api-build.yml'
   workflow_dispatch:
 
 permissions:

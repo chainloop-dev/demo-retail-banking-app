@@ -8,9 +8,6 @@ name: Mobile Client Build
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'mobile-client/**'
-      - '.github/workflows/mobile-build.yml'
   workflow_dispatch:
 
 permissions:

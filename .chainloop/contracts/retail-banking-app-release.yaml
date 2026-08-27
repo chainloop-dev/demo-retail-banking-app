@@ -3,8 +3,9 @@
 # The release gates on the compliance requirements the two build workflows
 # already produced for this project version — check-compliance-requirement
 # resolves them for `predicate.metadata.projectVersion`, the `+next` name both
-# builds attested under — plus the one piece of evidence that belongs to neither
-# component: the cross-component integration test report.
+# builds attested under — plus the two pieces of evidence the release produces
+# itself: the cross-component integration test report, which belongs to neither
+# component, and the container image that ships.
 #
 # The gate is red today by design. The intended path out is a requirement
 # exception recorded in Chainloop, which the policy skips, not a weaker contract.
@@ -18,6 +19,9 @@ spec:
     # so one material covers every *IT class.
     - name: integration-report
       type: JUNIT_XML
+
+    - name: container-image
+      type: CONTAINER_IMAGE
 
   policies:
     materials:
