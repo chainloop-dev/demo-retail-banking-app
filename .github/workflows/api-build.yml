@@ -6,7 +6,7 @@
 # is for: the state lives on the server keyed by an attestation-id instead of on
 # one runner's disk, so any job holding the id can add evidence to it.
 
-name: API CI
+name: Backend API Build
 
 on:
   push:

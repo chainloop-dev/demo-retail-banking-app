@@ -4,7 +4,7 @@
 # repository and no scanner runs here. Two of the four steps below are therefore
 # substitutions rather than the real thing, and they are labelled as such.
 # See mobile-client/README.md for what is real and what is not, and why.
-name: Mobile CI
+name: Mobile Client Build
 
 on:
   push:
