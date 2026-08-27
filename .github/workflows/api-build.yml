@@ -100,7 +100,11 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        run: ./mvnw -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=payments-api -Dsonar.projectName='payments-api'
+        # The project key is the one the SonarQube server already knows. It
+        # predates the payments-api rename and cannot be changed from here: the
+        # token has no Create Projects permission, so analysing under a fresh
+        # key is refused. Only the display name follows the rename.
+        run: ./mvnw -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=chainloop-dev_java-component-demo_e657147d-321b-4e10-bc1d-c06bb577d2df -Dsonar.projectName='payments-api'
 
       - name: Install Chainloop
         run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
@@ -154,7 +158,8 @@ jobs:
           SONARQUBE_URL: ${{ secrets.SONAR_HOST_URL }}
           SONARQUBE_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          chainloop transform sonarqube --project payments-api \
+          chainloop transform sonarqube \
+            --project chainloop-dev_java-component-demo_e657147d-321b-4e10-bc1d-c06bb577d2df \
             --branch main --output-file sq.sarif
           chainloop attestation add --name sast-report --kind SARIF \
             --value sq.sarif --attestation-id "$ATTESTATION_ID"
