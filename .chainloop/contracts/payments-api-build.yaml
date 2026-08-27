@@ -1,0 +1,68 @@
+# Contract for the payments-api `build` workflow (.github/workflows/api-build.yml).
+#
+# Declaring materials here is what turns a missing report into a failed
+# attestation. Every material below is produced unconditionally by that
+# workflow, so none is marked `optional` — an absent one is a real regression,
+# not a variation.
+#
+# Thresholds are deliberately the values a well-run project should hold, not
+# values fitted to this repo's current numbers. See spec 137.
+apiVersion: chainloop.dev/v1
+kind: Contract
+metadata:
+  name: payments-api-build
+spec:
+  materials:
+    # Boot's repackage output. The `.jar.original` left beside it is not attested.
+    - name: app-binary
+      type: ARTIFACT
+    # JaCoCo binds `report` to `prepare-package`, so this comes free with `verify`.
+    - name: coverage-report
+      type: JACOCO_XML
+    # SonarQube findings pulled back out of the Search API by
+    # `chainloop transform sonarqube` — SonarQube's own output never leaves
+    # their server, so this is the only way it becomes evidence.
+    - name: sast-report
+      type: SARIF
+    # PIT, from the opt-in `mutation` Maven profile.
+    - name: mutation-report
+      type: PITEST_XML
+
+  runner:
+    type: GITHUB_ACTION
+
+  policies:
+    attestation:
+      - ref: source-commit
+
+    materials:
+      # INSTRUCTION is both JaCoCo's default and the policy's, and it is the
+      # stricter reading: JaCoCo counts a line as covered when any instruction
+      # on it executed, so LINE >= INSTRUCTION for the same code.
+      - ref: code-coverage
+        with:
+          counter: INSTRUCTION
+          threshold: "80"
+
+      # The two presence checks below assert the evidence exists at all, which
+      # is not the same as it passing. Disable the `mutation` profile and
+      # mutation-score has nothing to evaluate; without this that reads as
+      # silence rather than as a regression.
+      - ref: test-coverage-scan-present
+      - ref: mutation-scan-present
+
+      # test_strength rather than mutation_coverage: it excludes NO_COVERAGE
+      # mutants, so it does not re-penalise the reach gaps code-coverage above
+      # already gates. Coverage then measures what tests reach, and this
+      # measures what they assert.
+      - ref: mutation-score
+        with:
+          metric: test_strength
+          threshold: "80"
+
+  policyGroups:
+    - ref: sast
+    # Java only. The Sonar transform enriches findings with CWE IDs, so this
+    # group actually populates here — it is deliberately absent from the mobile
+    # contract, where Oversecured findings carry no CWE.
+    - ref: cwes
