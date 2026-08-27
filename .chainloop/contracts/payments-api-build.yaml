@@ -28,9 +28,6 @@ spec:
     - name: mutation-report
       type: PITEST_XML
 
-  runner:
-    type: GITHUB_ACTION
-
   policies:
     attestation:
       - ref: source-commit
@@ -66,3 +63,6 @@ spec:
     # group actually populates here — it is deliberately absent from the mobile
     # contract, where Oversecured findings carry no CWE.
     - ref: cwes
+
+  runner:
+    type: GITHUB_ACTION

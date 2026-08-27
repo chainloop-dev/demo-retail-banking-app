@@ -1,5 +1,5 @@
-# Build pipeline for the Payments API component. Runs on merges to main only —
-# pull request validation will get its own workflow.
+# Build pipeline for the Payments API component. Runs on merges to main, or on
+# demand from the Actions tab — pull request validation will get its own workflow.
 #
 # The api-build and mutation-testing jobs run in parallel but contribute to a
 # SINGLE Chainloop attestation. That is what `attestation init --remote-state`
@@ -14,6 +14,8 @@ on:
     paths:
       - 'payments-api/**'
       - '.github/workflows/api-build.yml'
+  # Manual runs, e.g. to re-attest after a contract change without a code push.
+  workflow_dispatch:
 
 permissions:
   contents: read

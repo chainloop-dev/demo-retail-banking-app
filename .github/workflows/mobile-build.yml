@@ -12,6 +12,8 @@ on:
     paths:
       - 'mobile-client/**'
       - '.github/workflows/mobile-build.yml'
+  # Manual runs, e.g. to re-attest after a contract change without a code push.
+  workflow_dispatch:
 
 permissions:
   contents: read
