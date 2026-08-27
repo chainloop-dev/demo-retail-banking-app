@@ -197,21 +197,15 @@ jobs:
       - name: Install Chainloop
         run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
 
-      # Attested straight from target/, not from the uploaded artifact below:
-      # upload-artifact zips whatever it is given, and the policy needs the XML.
+      # mutations.xml is the machine-readable report Chainloop ingests; index.html
+      # beside it is the human-readable version. Neither is published as a build
+      # artifact: the attested copy in Chainloop is the retrievable one, and a
+      # second copy on the run would expire in 90 days while claiming to be the
+      # same evidence.
       - name: Attest mutation report
         run: |
           chainloop attestation add --name mutation-report --kind PITEST_XML \
             --value target/pit-reports/mutations.xml --attestation-id "$ATTESTATION_ID"
-
-      # target/pit-reports/mutations.xml is the report Chainloop ingests;
-      # index.html in the same directory is the human-readable version.
-      - name: Upload PIT report
-        uses: actions/upload-artifact@v4
-        with:
-          name: pit-reports
-          path: payments-api/target/pit-reports/
-          if-no-files-found: error
 
   # Signs and pushes the attestation once both evidence-producing jobs are done.
   # `success()` and `failure()` describe a job's own steps, so the upstream

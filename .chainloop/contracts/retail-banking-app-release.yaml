@@ -1,10 +1,11 @@
 # Contract for the `release` workflow of the `retail-banking-app` project
 # (.github/workflows/release.yml).
 #
-# Unlike the two build contracts beside it, this one declares no materials. The
-# release attestation carries its runner context, the release version, and one
-# compliance gate — it produces no evidence of its own and instead gates on the
-# evidence the two build workflows already contributed to this project version.
+# Unlike the two build contracts beside it, this one declares a single material.
+# The release attestation gates on the evidence the two build workflows already
+# contributed to this project version, and adds the one piece of evidence that
+# belongs to neither component on its own: the cross-component integration test
+# report.
 #
 # How the gate reads the right version
 # ------------------------------------
@@ -49,22 +50,44 @@
 # requirement_exception_id, so an accepted risk is recorded as an exception in
 # Chainloop instead of being edited out of the contract here.
 #
-# What is still expected to land here, and why it has not yet:
+# The integration test report
+# ---------------------------
+# `integration-report` is the cross-component evidence: the suite asserts the
+# contract between the mobile client and the Payments API, so it belongs to
+# neither component's build and is produced by the release pipeline itself.
 #
-#   - The integration test report for the combined components, as JUNIT_XML.
-#     Held back because no built-in policy consumes JUNIT_XML today, so
-#     declaring the material would attach evidence that nothing evaluates —
-#     the report would be stored and signed but never gated.
+# No BUILT-IN policy evaluates JUNIT_XML. `material-present` can assert such a
+# material exists and `test-coverage-scan-present` covers JaCoCo/Cobertura, but
+# nothing reads the test results, so a report full of failures would satisfy
+# every built-in. `test-results` in .chainloop/policies/ is the custom policy
+# that closes that, applied to the org from this repo by the same GitOps sync
+# that applies these contracts.
 #
-# Adding a material here makes it mandatory: an absent one fails the
-# attestation. So each addition needs the release workflow to produce it
-# unconditionally first.
+# Declaring the material makes it mandatory: an absent report fails the
+# attestation. That is the point — a release that skipped its integration suite
+# must not be able to pass by producing nothing.
 apiVersion: chainloop.dev/v1
 kind: Contract
 metadata:
   name: retail-banking-app-release
 spec:
+  materials:
+    # Failsafe's report directory, zipped. The JUNIT_XML ingester reads a raw
+    # .xml, a .zip or a .tar.gz, so one material covers every *IT class rather
+    # than pinning a single file that a second suite would silently outgrow.
+    - name: integration-report
+      type: JUNIT_XML
+
   policies:
+    materials:
+      # Any failing or errored test case blocks the release. `max_failures`
+      # defaults to 0 and is left at the default deliberately: a tolerance for
+      # cross-component failures is exactly the kind of thing that should be an
+      # explicit, approved requirement exception rather than a number quietly
+      # raised in a contract.
+      - ref: test-results
+        gate: true
+
     attestation:
       # Bare, matching the two build contracts. Note this does NOT satisfy the
       # framework's source-commit-attestation requirement, which pins

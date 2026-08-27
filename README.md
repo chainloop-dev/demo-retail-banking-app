@@ -26,6 +26,7 @@ Each component owns its own build, configuration and documentation. Start with
 | `.github/workflows/` | CI pipelines for every component. |
 | `.chainloop.yml` | Chainloop organization, project and **project version**. Every component of this repo attests to the one `retail-banking-app` project; each pipeline names its own workflow (`payments-api-build`, `mobile-client-build`, `release`) explicitly, but none names a version — see below. |
 | `.chainloop/contracts/` | Contracts for all three workflows, synced to Chainloop by [`chainloop-sync.yml`](.github/workflows/chainloop-sync.yml). Git is the source of truth. |
+| `.chainloop/policies/` | Org-scoped custom policies the contracts reference by name, synced by the same workflow. Currently `test-results`, which evaluates a `JUNIT_XML` report — Chainloop ingests that material type but ships no built-in policy that reads the results. |
 
 ## Versioning and releases
 
@@ -33,9 +34,16 @@ Each component owns its own build, configuration and documentation. Start with
 `chainloop attestation init` reads it whenever a pipeline passes no `--version`. No pipeline
 does, so every build of either component attests into the same in-flight project version.
 
-Pushing a `v*` tag runs [`release.yml`](.github/workflows/release.yml), which attests a release
-into that same version, renames it to the tag, and opens a pull request bumping
-`projectVersion` to `<tag>+next` for the next cycle. Do not edit that line by hand.
+Pushing a `v*` tag runs [`release.yml`](.github/workflows/release.yml), which runs the
+cross-component integration suite, attests a release into that same version, renames it to the
+tag, and opens a pull request bumping `projectVersion` to `<tag>+next` for the next cycle. Do
+not edit that line by hand.
+
+The release is **gated**: `attestation push` evaluates the compliance requirements the two build
+workflows produced during the cycle, plus the integration test report the release run produces
+itself. If either fails, the push exits non-zero and the rename and the bump pull request never
+run — a blocked release leaves nothing half-released. The way past a gate is a recorded
+requirement exception in Chainloop, not a weaker contract.
 
 ## License
 

@@ -1,0 +1,34 @@
+# Custom policy: evaluate a JUnit/xUnit test report and fail on failing tests.
+#
+# Chainloop has no built-in policy that evaluates JUNIT_XML content. `material-present`
+# can assert a JUNIT_XML material exists, and `test-coverage-scan-present` covers
+# JaCoCo/Cobertura, but nothing reads the test results themselves — so a pipeline
+# could attach a report full of failures and satisfy every built-in.
+#
+# This is the org-scoped policy that closes that. It lives in the repo and is pushed
+# to the control plane by .github/workflows/chainloop-sync.yml, exactly like the
+# contracts beside it.
+apiVersion: chainloop.dev/v1
+kind: Policy
+metadata:
+  name: test-results
+  description: |
+    Fails a JUnit/xUnit test report that contains failing or errored test cases.
+    Chainloop ingests the report with go-junit, which normalises every producer's
+    spelling to four statuses — `passed`, `skipped`, `failed`, `error` — and this
+    policy counts the last two. Skipped tests are not treated as failures.
+
+    Accepts a raw `.xml` file or a `.zip`/`.tar.gz` of them, so a whole
+    `surefire-reports/` or `failsafe-reports/` directory can be attested as one
+    material.
+  annotations:
+    category: testing
+spec:
+  inputs:
+    - name: max_failures
+      description: Maximum number of failing or errored test cases tolerated before the policy violates. Defaults to zero, i.e. any failing test is a violation
+      required: false
+      default: "0"
+  policies:
+    - kind: JUNIT_XML
+      path: test-results.rego

@@ -111,16 +111,3 @@ jobs:
       - name: Reset attestation on cancellation
         if: cancelled() && steps.init.outcome == 'success'
         run: chainloop attestation reset --trigger cancellation
-
-      # Mirrors the PIT report upload in api-build.yml. upload-artifact always
-      # zips, so the download is mobile-evidence.zip; the attestation above
-      # consumed the raw files rather than round-tripping through the archive.
-      - name: Upload APK and report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mobile-evidence
-          path: |
-            mobile-client/build/outputs/apk/release/
-            mobile-client/build/reports/oversecured/
-          if-no-files-found: warn
