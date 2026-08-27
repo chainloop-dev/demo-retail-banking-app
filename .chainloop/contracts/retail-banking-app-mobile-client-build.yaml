@@ -1,4 +1,5 @@
-# Contract for the mobile-banking `build` workflow (.github/workflows/mobile-build.yml).
+# Contract for the `mobile-client-build` workflow of the `retail-banking-app`
+# project (.github/workflows/mobile-build.yml).
 #
 # Read mobile-client/README.md before changing this. Two of that workflow's
 # steps are substitutions — the APK is a pre-built stand-in and the scan runs
@@ -8,7 +9,7 @@
 apiVersion: chainloop.dev/v1
 kind: Contract
 metadata:
-  name: mobile-banking-build
+  name: retail-banking-app-mobile-client-build
 spec:
   materials:
     # Stand-in for the Gradle release APK, staged to the path Gradle would write.
@@ -29,7 +30,8 @@ spec:
     # in one findings model.
     - ref: sast
 
-    # No `cwes` here, unlike payments-api. Oversecured findings carry neither
+    # No `cwes` here, unlike the sibling `payments-api-build` workflow.
+    # Oversecured findings carry neither
     # CWE nor CVE, so the group would never populate for this component and
     # would show as a permanently empty panel beside the Java one.
 

@@ -23,7 +23,8 @@ Each component owns its own build, configuration and documentation. Start with
 | Path | Purpose |
 |---|---|
 | `.github/workflows/` | CI pipelines for every component. |
-| `.chainloop.yml` | Chainloop organization. Each pipeline names its own project (`payments-api`, `mobile-banking`) explicitly. |
+| `.chainloop.yml` | Chainloop organization and project. Every component of this repo attests to the one `retail-banking-app` project; each pipeline names its own workflow (`payments-api-build`, `mobile-client-build`) explicitly. |
+| `.chainloop/contracts/` | Contracts for both build workflows, synced to Chainloop by [`chainloop-sync.yml`](.github/workflows/chainloop-sync.yml). Git is the source of truth. |
 
 ## License
 

@@ -10,7 +10,8 @@ Read that literally: nothing in this directory is compiled, and no security scan
 
 [`mobile-build.yml`](../.github/workflows/mobile-build.yml) produces the same *shape* of evidence a
 real Android pipeline would — an application binary plus a mobile SAST report, attested together to
-the `mobile-banking` Chainloop project — by substituting a pre-built binary and a pre-existing scan
+the `mobile-client-build` workflow of the `retail-banking-app` Chainloop project — by substituting a
+pre-built binary and a pre-existing scan
 for the two steps it cannot run:
 
 | Step | Real pipeline | Here |

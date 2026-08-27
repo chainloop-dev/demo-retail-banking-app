@@ -1,4 +1,5 @@
-# Contract for the payments-api `build` workflow (.github/workflows/api-build.yml).
+# Contract for the `payments-api-build` workflow of the `retail-banking-app`
+# project (.github/workflows/api-build.yml).
 #
 # Declaring materials here is what turns a missing report into a failed
 # attestation. Every material below is produced unconditionally by that
@@ -10,7 +11,7 @@
 apiVersion: chainloop.dev/v1
 kind: Contract
 metadata:
-  name: payments-api-build
+  name: retail-banking-app-payments-api-build
 spec:
   materials:
     # Boot's repackage output. The `.jar.original` left beside it is not attested.
