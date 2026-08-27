@@ -22,7 +22,7 @@ Each component owns its own build, configuration and documentation. Start with
 | Path | Purpose |
 |---|---|
 | `.github/workflows/` | CI pipelines for every component. |
-| `.chainloop.yml` | Default Chainloop project. The mobile pipeline overrides it with `--project mobile-banking`. |
+| `.chainloop.yml` | Chainloop organization. Each pipeline names its own project (`payments-api`, `mobile-banking`) explicitly. |
 | `.devcontainer/`, `.gitpod.yml` | Prebuilt development environments. |
 
 ## License

@@ -119,6 +119,32 @@ jobs:
           chainloop attestation add --name coverage-report --kind JACOCO_XML \
             --value target/site/jacoco/jacoco.xml --attestation-id "$ATTESTATION_ID"
 
+      # The sonar goal only UPLOADS the report; the server then processes it in a
+      # background Compute Engine task and the goal returns immediately. Without
+      # waiting, the transform below would query the Search API before the new
+      # analysis had landed and attest the PREVIOUS commit's issues — or, on the
+      # first run against a fresh project key, an empty result that reads as
+      # "clean". Polled rather than using -Dsonar.qualitygate.wait=true, which
+      # would also make a red Sonar quality gate fail the build; gating is the
+      # attestation policy's job, not Maven's.
+      - name: Wait for SonarQube analysis
+        if: github.ref == 'refs/heads/main' && matrix.java == '17'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+          task_url=$(sed -n 's/^ceTaskUrl=//p' target/sonar/report-task.txt)
+          for _ in $(seq 1 60); do
+            status=$(curl -sf -u "${SONAR_TOKEN}:" "$task_url" | jq -r .task.status)
+            echo "Compute Engine task: $status"
+            case "$status" in
+              SUCCESS) exit 0 ;;
+              FAILED|CANCELED) echo "::error::SonarQube analysis $status"; exit 1 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::timed out waiting for SonarQube analysis"; exit 1
+
       # SonarQube's own output never leaves their server, so this pulls the
       # issues and hotspots back out of the Search API and turns them into SARIF.
       # Gated to main for the same reason the analysis is: SonarQube Community
@@ -186,7 +212,9 @@ jobs:
   attestation-push:
     name: Close attestation
     needs: [ attestation-init, build, mutation-testing ]
-    if: always()
+    # Skipped if init never produced an id: there is then nothing to close, and
+    # `reset` would fail on an empty --attestation-id.
+    if: always() && needs.attestation-init.result == 'success'
     runs-on: ubuntu-latest
 
     env:
@@ -199,13 +227,22 @@ jobs:
       # A policy violation makes this step exit non-zero, which is what lets a
       # gate block the pipeline rather than just annotate it.
       - name: Push attestation
+        id: push
         if: needs.build.result == 'success' && needs.mutation-testing.result == 'success'
         run: chainloop attestation push --attestation-id "$ATTESTATION_ID"
 
-      - name: Reset attestation on failure
-        if: needs.build.result == 'failure' || needs.mutation-testing.result == 'failure'
-        run: chainloop attestation reset --attestation-id "$ATTESTATION_ID"
-
-      - name: Reset attestation on cancellation
-        if: needs.build.result == 'cancelled' || needs.mutation-testing.result == 'cancelled'
-        run: chainloop attestation reset --trigger cancellation --attestation-id "$ATTESTATION_ID"
+      # Catch-all rather than one step per outcome. A needs result can also be
+      # `skipped` — cancel a run after build finishes while mutation-testing is
+      # still queued and you get success + skipped, which no failure/cancelled
+      # condition matches, leaving the remote attestation open forever. Note
+      # `init --replace` would not rescue that: per the CLI it applies to local
+      # state only, so nothing would clear it but a manual reset.
+      - name: Reset attestation if it was not pushed
+        if: always() && steps.push.outcome != 'success'
+        run: |
+          trigger=failure
+          if [ "${{ needs.build.result }}" = "cancelled" ] \
+            || [ "${{ needs.mutation-testing.result }}" = "cancelled" ]; then
+            trigger=cancellation
+          fi
+          chainloop attestation reset --trigger "$trigger" --attestation-id "$ATTESTATION_ID"

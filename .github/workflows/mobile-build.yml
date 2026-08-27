@@ -48,6 +48,7 @@ jobs:
         run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s 
 
       - name: Initialize attestation
+        id: init
         run: chainloop attestation init --project mobile-banking --workflow build
 
       # SUBSTITUTION 1 of 2: no Android sources exist, so nothing is compiled.
@@ -93,12 +94,17 @@ jobs:
         if: success()
         run: chainloop attestation push
 
+      # Both resets are gated on init having succeeded. A bare failure()/cancelled()
+      # also fires when checkout, Node setup or the CLI install failed — cases with
+      # no attestation to reset, and in the install case no `chainloop` binary
+      # either, so the reset would exit non-zero on top of the real failure and
+      # bury it.
       - name: Reset attestation on failure
-        if: failure()
+        if: failure() && steps.init.outcome == 'success'
         run: chainloop attestation reset
 
       - name: Reset attestation on cancellation
-        if: cancelled()
+        if: cancelled() && steps.init.outcome == 'success'
         run: chainloop attestation reset --trigger cancellation
 
       # Mirrors the PIT report upload in maven-build.yml. upload-artifact always
