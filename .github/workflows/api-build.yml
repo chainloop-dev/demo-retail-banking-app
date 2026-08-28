@@ -102,12 +102,6 @@ jobs:
       - name: Install Chainloop
         run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
 
-      - name: Attest application JAR
-        run: |
-          jar=$(ls target/*.jar)   # Does not match Boot's leftover .jar.original
-          chainloop attestation add --name app-binary --kind ARTIFACT \
-            --value "$jar" --attestation-id "$ATTESTATION_ID"
-
       - name: Attest coverage report
         run: |
           chainloop attestation add --name coverage-report --kind JACOCO_XML \

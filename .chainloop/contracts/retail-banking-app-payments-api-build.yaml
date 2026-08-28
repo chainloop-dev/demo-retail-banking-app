@@ -6,8 +6,6 @@ metadata:
   name: retail-banking-app-payments-api-build
 spec:
   materials:
-    - name: app-binary
-      type: ARTIFACT
     - name: coverage-report
       type: JACOCO_XML
     # Produced by `chainloop transform sonarqube`; SonarQube's own output never
