@@ -15,7 +15,15 @@ spec:
 
   policies:
     attestation:
+      # Both arguments make the commit signature mandatory rather than merely
+      # recorded: one requires a signature, the other requires GitHub to report
+      # it as `verified`. The annotations they read are collected by the runner
+      # context, which needs GITHUB_TOKEN on `attestation init` — see the
+      # workflow.
       - ref: source-commit
+        with:
+          check_signature: "true"
+          check_author_verified: "true"
 
   policyGroups:
     # Same group the Java contract uses: one policy, two report formats, one
