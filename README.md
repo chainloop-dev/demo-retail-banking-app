@@ -50,3 +50,7 @@ requirement exception in Chainloop, not a weaker contract.
 Released under version 2.0 of the [Apache License](https://www.apache.org/licenses/LICENSE-2.0).
 The Payments API is derived from the [Spring PetClinic](https://github.com/spring-projects/spring-petclinic)
 sample application.
+
+---
+
+_Last updated: 2026-08-28._
