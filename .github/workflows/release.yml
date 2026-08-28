@@ -126,7 +126,8 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read
+      # create-pull-request pushes the bump branch, so read is not enough.
+      contents: write
       id-token: write
       packages: write
       pull-requests: write
@@ -199,6 +200,10 @@ jobs:
         with:
           commit-message: "chore(chainloop): bump projectVersion to ${{ env.RELEASE_TAG }}+next"
           signoff: true
+          # The contracts require a signed, verified commit; committing through
+          # the API signs it as github-actions[bot]. Only works with
+          # GITHUB_TOKEN or an app token, never a PAT.
+          sign-commits: true
           base: main
           branch: chainloop/bump-project-version
           title: "chore(chainloop): open the cycle after ${{ env.RELEASE_TAG }}"
