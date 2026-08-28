@@ -1,0 +1,25 @@
+.github/workflows/before/api-build.yml
+  s_338e3439e02b98::t_3a32852ff62d21 1-101
+.github/workflows/before/release.yml
+  s_338e3439e02b98::t_91614486003e84 1-132
+.github/workflows/before/README.md
+  s_338e3439e02b98::t_fc506d16d8d66a 1-32
+.github/workflows/before/mobile-build.yml
+  s_338e3439e02b98::t_0926e0aaf1a832 1-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2fc9d6423a98de88e32ec71ac4bfd6f36de1c6fd",
+  "prompts": {},
+  "sessions": {
+    "s_338e3439e02b98": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65025fb2-577f-4a8e-bbe8-1f50c74fe04f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Miguel Martinez <miguel@chainloop.dev>"
+    }
+  }
+}
