@@ -1,0 +1,132 @@
+# Release pipeline for the retail-banking-app product, BEFORE Chainloop.
+#
+# Reference copy — see before/README.md. Nothing in this directory is picked up
+# by GitHub Actions.
+#
+# Runs the cross-component integration suite and ships the Payments API image to
+# GHCR. That is the whole release: there is nothing to ask about the component
+# builds that produced this version, so the tag ships on the strength of the two
+# build pipelines having been green at some point.
+
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to build, e.g. v2026.9'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # On a tag push `inputs.version` is empty and ref_name is the tag; on a manual
+  # run the input wins.
+  resolve-tag:
+    name: Resolve release tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+
+    steps:
+      - name: Resolve release tag
+        id: tag
+        env:
+          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
+        run: |
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "::error::could not resolve a release tag"
+            exit 1
+          fi
+          echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+
+  # The cross-component integration suite: it asserts the contract between the
+  # mobile client and the Payments API, so it belongs to neither component's
+  # build and runs here once, against the versions being released.
+  #
+  # The `integration` profile sets testFailureIgnore and does not bind
+  # failsafe:verify, so a failing test leaves this job green and the release
+  # carries on to the image build. Reading the reports means downloading the
+  # artifact below and looking.
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: payments-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run the cross-component integration suite
+        run: ./mvnw -B -P integration verify
+
+      - name: Upload the Failsafe reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-reports
+          path: payments-api/target/failsafe-reports/*.xml
+          if-no-files-found: error
+
+  # Recompiles the application, so the JAR inside the image is a second build of
+  # the commit, not the one api-build.yml produced — and nothing records that.
+  container-image:
+    name: Container image
+    needs: [ resolve-tag, integration-tests ]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: payments-api
+
+    permissions:
+      contents: read
+      # Pushing to ghcr.io, which needs no secret beyond GITHUB_TOKEN.
+      packages: write
+
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/payments-api:${{ needs.resolve-tag.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Paketo buildpacks, so there is no Dockerfile to keep in sync with the
+      # build. Both suites already ran for this commit, hence -DskipTests.
+      - name: Build and publish the container image
+        run: |
+          ./mvnw -B spring-boot:build-image -DskipTests \
+            -Dspring-boot.build-image.imageName="$IMAGE" \
+            -Dspring-boot.build-image.publish=true \
+            -Ddocker.publishRegistry.username='${{ github.actor }}' \
+            -Ddocker.publishRegistry.password='${{ secrets.GITHUB_TOKEN }}'
+
+      # The image is now in GHCR under the release tag. What went into it, which
+      # scans covered it and whether they passed is not recorded anywhere the
+      # tag can reach.
+      - name: Report the published image
+        run: echo "Published $IMAGE"

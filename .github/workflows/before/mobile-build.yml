@@ -1,8 +1,15 @@
-# Pipeline for the mobile client component.
+# Pipeline for the mobile client component, BEFORE Chainloop.
+#
+# Reference copy — see before/README.md. Nothing in this directory is picked up
+# by GitHub Actions.
 #
 # Placeholder component: there are no Android sources here and no scanner runs in
 # CI, so two of the steps below are substitutions and labelled as such. See
 # mobile-client/README.md for what is real and what is not.
+#
+# The APK and the Oversecured report both end up in the same run artifact, which
+# is as close as this pipeline gets to saying they belong together.
+
 name: Mobile Client Build
 
 on:
@@ -12,9 +19,6 @@ on:
 
 permissions:
   contents: read
-  # OIDC token Chainloop uses to identify the org, so no CHAINLOOP_TOKEN is
-  # needed below.
-  id-token: write
 
 env:
   # Pre-built binary, and the path Gradle would have written the real one to.
@@ -28,7 +32,7 @@ env:
   OVERSECURED_CLI: '@oversecured/cli@0.1.0-beta.4'
 
 jobs:
-  build-and-attest:
+  build:
     name: Mobile client
     runs-on: ubuntu-latest
 
@@ -39,20 +43,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install Chainloop
-        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s 
-
-      # No --version: the CLI picks up projectVersion from .chainloop.yml, so
-      # this build lands in the same in-flight version as the payments API and
-      # the eventual release.
-      - name: Initialize attestation
-        id: init
-        env:
-          # Lets the runner-context collector verify the commit and its signature
-          # through the GitHub API, which source-commit reads.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: chainloop attestation init --project retail-banking-app --workflow mobile-client-build
 
       # SUBSTITUTION 1 of 2: a real pipeline replaces this with
       # `./gradlew assembleRelease` and changes nothing else.
@@ -82,25 +72,13 @@ jobs:
             --format json \
             --output "$REPORT"
 
-      # Real from here on. Both materials land in one signed attestation — that
-      # statement, not any digest inside the report, binds the binary to its scan.
-      - name: Attest APK
-        run: chainloop attestation add --name app-binary --kind ARTIFACT --value "$APK"
-
-      - name: Attest Oversecured report
-        run: chainloop attestation add --name sast-report --kind OVERSECURED_JSON --value "$REPORT"
-
-      - name: Push attestation
-        if: success()
-        run: chainloop attestation push
-
-      # Both resets are gated on init: a bare failure()/cancelled() also fires
-      # when checkout, Node setup or the CLI install failed, where there is no
-      # attestation to reset and no `chainloop` binary to do it with.
-      - name: Reset attestation on failure
-        if: failure() && steps.init.outcome == 'success'
-        run: chainloop attestation reset
-
-      - name: Reset attestation on cancellation
-        if: cancelled() && steps.init.outcome == 'success'
-        run: chainloop attestation reset --trigger cancellation
+      # Nothing reads the findings: the report is uploaded as-is and expires
+      # with the run.
+      - name: Upload APK and scan report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-client-build
+          path: |
+            ${{ env.APK }}
+            ${{ env.REPORT }}
+          if-no-files-found: error

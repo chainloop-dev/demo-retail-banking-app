@@ -31,7 +31,15 @@ spec:
         gate: true
 
     attestation:
+      # Both arguments make the commit signature mandatory rather than merely
+      # recorded: one requires a signature, the other requires GitHub to report
+      # it as `verified`. The annotations they read are collected by the runner
+      # context, which needs GITHUB_TOKEN on `attestation init` — see the
+      # workflow.
       - ref: source-commit
+        with:
+          check_signature: "true"
+          check_author_verified: "true"
 
       # One attachment rather than three: the policy reports one violation per
       # failing requirement, so a blocked release names all of them. Matches on

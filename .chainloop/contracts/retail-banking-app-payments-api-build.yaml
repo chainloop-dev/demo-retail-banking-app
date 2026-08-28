@@ -19,7 +19,15 @@ spec:
 
   policies:
     attestation:
+      # Both arguments make the commit signature mandatory rather than merely
+      # recorded: one requires a signature, the other requires GitHub to report
+      # it as `verified`. The annotations they read are collected by the runner
+      # context, which needs GITHUB_TOKEN on `attestation init` — see the
+      # workflow.
       - ref: source-commit
+        with:
+          check_signature: "true"
+          check_author_verified: "true"
 
       # Both ship a `kind: ATTESTATION` rego, so they must be attached here.
       # Under `materials` they would match nothing and never evaluate.
