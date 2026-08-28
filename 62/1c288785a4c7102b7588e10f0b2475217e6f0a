@@ -1,0 +1,28 @@
+.github/workflows/release.yml
+  s_7da7cac3550910::t_9fd356c768eac0 283-284
+  s_7da7cac3550910::t_06dd96b26f5f05 18,20-25,27-32,62-63,99-112,138-139,151-153,157,184,191,195-197,202-203,205-213,221-222,225-228,233-241,243,253,262-264,266-267,278,285,288,329-333,339
+  s_7da7cac3550910::t_99604e00d858a5 55-61,64-98
+.chainloop/contracts/retail-banking-app-release-gate.yaml
+  h_cb14c7fdb7afb4 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "621c288785a4c7102b7588e10f0b2475217e6f0a",
+  "prompts": {},
+  "humans": {
+    "h_cb14c7fdb7afb4": {
+      "author": "Miguel Martinez <miguel@chainloop.dev>"
+    }
+  },
+  "sessions": {
+    "s_7da7cac3550910": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "937b643b-f40a-47fd-aa09-47520ee360fa",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Miguel Martinez <miguel@chainloop.dev>"
+    }
+  }
+}
