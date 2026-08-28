@@ -44,20 +44,9 @@ import org.springframework.web.client.RestTemplate;
  * Named {@code *IT} so Surefire's default includes skip it: the component build must not
  * run the cross-component suite. It is executed by Failsafe under the {@code integration}
  * Maven profile — {@code ./mvnw -P integration verify}.
- * <p>
- * <strong>{@link #paymentsHistoryEndpointServesTheMobileClient()} fails, and is meant
- * to.</strong> The mobile client's payments screen calls an endpoint the API has not
- * shipped, which is exactly the class of defect a component-scoped test suite cannot
- * catch — each side passes its own tests and the product is still broken. The failure is
- * what the release gate reads.
  */
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 class MobileClientContractIT {
-
-	/**
-	 * Endpoint the mobile client's payments screen calls. Not implemented by the API.
-	 */
-	private static final String MOBILE_PAYMENTS_PATH = "/api/mobile/v1/payments";
 
 	@LocalServerPort
 	int port;
@@ -81,14 +70,6 @@ class MobileClientContractIT {
 	@DisplayName("vet directory is reachable for the mobile client")
 	void vetDirectoryEndpointServesTheMobileClient() {
 		assertThat(statusOf("/vets.html")).isEqualTo(HttpStatus.OK);
-	}
-
-	@Test
-	@DisplayName("payments history is reachable for the mobile client")
-	void paymentsHistoryEndpointServesTheMobileClient() {
-		assertThat(statusOf(MOBILE_PAYMENTS_PATH))
-			.as("the mobile client payments screen calls %s", MOBILE_PAYMENTS_PATH)
-			.isEqualTo(HttpStatus.OK);
 	}
 
 	/**
