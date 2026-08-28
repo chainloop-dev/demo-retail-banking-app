@@ -15,16 +15,21 @@
 # Between the tag and that PR merging, builds still attest under the old `+next`
 # name. It is a PR rather than a push so the version in git stays reviewable.
 #
-# Gates on two things, per .chainloop/contracts/retail-banking-app-release.yaml:
-# the compliance requirements the build workflows already produced for this
-# version (no scan is re-run here), and the cross-component integration suite,
-# which runs below because it belongs to neither component.
+# Three jobs, two attestations:
 #
-# It also builds the Payments API container image, publishes it to GHCR and
-# attests the digest, so the artifact that ships is part of the attestation.
+#   1. release-gate — the `release-gate` attestation, whole and alone, per
+#      .chainloop/contracts/retail-banking-app-release-gate.yaml. No materials:
+#      it resolves the compliance requirements the two build workflows already
+#      produced for this version (no scan is re-run here) and blocks the rest of
+#      the pipeline if they are not met, so a blocked release costs neither a
+#      test run nor a published image.
 #
-# Four jobs share ONE attestation via `init --remote-state`, same shape as
-# api-build.yml.
+#   2. integration-tests and 3. release — the `release` attestation, per
+#      .chainloop/contracts/retail-banking-app-release.yaml. The integration job
+#      opens it and adds the cross-component test report; the release job adds
+#      the container image and closes it. They share it via `init --remote-state`,
+#      same shape as api-build.yml. The gate needs no remote state — one job
+#      opens, pushes and closes it.
 
 name: Release
 
@@ -47,10 +52,64 @@ permissions:
   id-token: write
 
 jobs:
-  # Also collects the runner context, so it must run before anything it
-  # describes.
-  attestation-init:
-    name: Open attestation
+  # First attestation, and the reason the rest of the pipeline gets to run at
+  # all. It carries no materials: `init` collects the runner context, `push`
+  # evaluates the two attestation policies, and check-compliance-requirement
+  # resolves what the build workflows produced for this project version.
+  #
+  # Local attestation state rather than --remote-state: one job opens, pushes and
+  # closes this attestation, so there is no id to hand to a sibling job.
+  release-gate:
+    name: Release gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # No --version, so this lands in the in-flight version from .chainloop.yml
+      # like everything else. No --release either: promoting the version is the
+      # release attestation's job, further down.
+      - name: Initialize gate attestation
+        id: init
+        env:
+          # Lets the runner-context collector verify the commit and its signature
+          # through the GitHub API, which source-commit reads.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: chainloop attestation init --project retail-banking-app --workflow release-gate
+
+      # Where a release is blocked: a requirement that is neither met nor
+      # excepted makes this exit non-zero, and every job below needs this one.
+      - name: Push gate attestation
+        id: push
+        run: chainloop attestation push
+
+      # Skipped when init itself failed — there would be no attestation to reset.
+      - name: Reset attestation if it was not pushed
+        if: always() && steps.init.outcome == 'success' && steps.push.outcome != 'success'
+        run: |
+          trigger=failure
+          if [ "${{ job.status }}" = "cancelled" ]; then
+            trigger=cancellation
+          fi
+          chainloop attestation reset --trigger "$trigger"
+
+  # Opens the release attestation and adds the first of its two materials.
+  #
+  # The cross-component integration suite asserts the contract between the mobile
+  # client and the Payments API, so it belongs to neither component's build and
+  # runs here once, against the versions being released.
+  #
+  # Report-only by design — the `integration` profile sets testFailureIgnore and
+  # does not bind failsafe:verify, so a failing test still leaves the Maven run
+  # green and the report gets attested. A Maven failure would abort before the
+  # evidence could be added, and the gate would never see it. Blocking happens at
+  # `attestation add`, on the test-results policy, and at `attestation push`.
+  integration-tests:
+    name: Integration tests
+    needs: release-gate
     runs-on: ubuntu-latest
     outputs:
       attestation-id: ${{ steps.init.outputs.attestation-id }}
@@ -76,8 +135,8 @@ jobs:
           fi
           echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
 
-      # Captured before anything can rewrite the file: the rename below needs the
-      # name the builds actually attested under.
+      # Captured before anything can rewrite the file: the rename in the release
+      # job needs the name the builds actually attested under.
       - name: Read in-flight project version
         id: project_version
         run: |
@@ -89,10 +148,13 @@ jobs:
           echo "current_version=${current_version}" >> "$GITHUB_OUTPUT"
           echo "Releasing ${current_version} as ${{ steps.tag.outputs.tag }}"
 
+      # Before the suite runs, not after: `init` collects the runner context, so
+      # it has to describe work that has not happened yet.
+      #
       # No --version on purpose: this attestation lands in the same version as
       # the builds rather than opening a fresh one named after the tag.
       # --release promotes that version.
-      - name: Initialize attestation
+      - name: Initialize release attestation
         id: init
         env:
           # Lets the runner-context collector verify the commit and its signature
@@ -111,29 +173,6 @@ jobs:
           echo "attestation-id=${id}" >> "$GITHUB_OUTPUT"
           echo "Attestation ${id}"
 
-  # The cross-component integration suite: it asserts the contract between the
-  # mobile client and the Payments API, so it belongs to neither component's
-  # build and runs here once, against the versions being released.
-  #
-  # Report-only by design — the `integration` profile sets testFailureIgnore and
-  # does not bind failsafe:verify, so a failing test still leaves this job green
-  # and the report gets attested. A Maven failure would abort before the evidence
-  # could be added, and the gate would never see it. Blocking happens at
-  # `attestation push`.
-  integration-tests:
-    name: Integration tests
-    needs: attestation-init
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: payments-api
-
-    env:
-      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
-
-    steps:
-      - uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -142,50 +181,66 @@ jobs:
           cache: maven
 
       - name: Run the cross-component integration suite
+        working-directory: payments-api
         run: ./mvnw -B -P integration verify
-
-      - name: Install Chainloop
-        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
 
       # The whole report directory travels as one material, so a second *IT class
       # needs no change here. Fails loudly when the glob matches nothing, so a
       # suite that produced no report cannot reach the gate unnoticed.
       - name: Package the Failsafe reports
+        working-directory: payments-api
         run: zip -q -j failsafe-reports.zip target/failsafe-reports/*.xml
 
       - name: Attest integration test report
+        working-directory: payments-api
+        env:
+          ATTESTATION_ID: ${{ steps.init.outputs.attestation-id }}
         run: |
           chainloop attestation add --name integration-report --kind JUNIT_XML \
             --value failsafe-reports.zip --attestation-id "$ATTESTATION_ID"
 
-  # Needs integration-tests so nothing is packaged for a release that cannot
-  # ship: the `test-results` gate is evaluated by `attestation add`, so a failing
-  # suite fails that job even though the Maven run stays green.
+  # Adds the image that ships, closes the attestation and, only if it was
+  # accepted, promotes the version.
   #
-  # Recompiles the application, so the JAR inside the image is a second build of
-  # the commit, not the one api-build.yml attested.
-  container-image:
-    name: Container image
-    needs: [ attestation-init, integration-tests ]
+  # Runs whenever the integration job opened an attestation, including when that
+  # job then failed: the id is the proof something is open, and leaving it open
+  # is the one outcome this pipeline must not have. `success()`/`failure()`
+  # describe a job's own steps, so the upstream result is read from the needs
+  # context instead.
+  release:
+    name: Release attestation
+    needs: [ release-gate, integration-tests ]
+    if: always() && needs.integration-tests.outputs.attestation-id != ''
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: payments-api
 
     permissions:
       contents: read
       id-token: write
       # Pushing to ghcr.io, which needs no secret beyond GITHUB_TOKEN.
       packages: write
+      # For the bump pull request.
+      pull-requests: write
 
     env:
-      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
-      IMAGE: ghcr.io/${{ github.repository_owner }}/payments-api:${{ needs.attestation-init.outputs.tag }}
+      ATTESTATION_ID: ${{ needs.integration-tests.outputs.attestation-id }}
+      RELEASE_TAG: ${{ needs.integration-tests.outputs.tag }}
+      CURRENT_VERSION: ${{ needs.integration-tests.outputs.current-version }}
+      IMAGE: ghcr.io/${{ github.repository_owner }}/payments-api:${{ needs.integration-tests.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v4
 
+      # Unconditional, and before the image steps: the reset at the bottom needs
+      # the CLI even on the path where nothing below it ran.
+      - name: Install Chainloop
+        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
+
+      # Every image step is gated on the integration job having passed, so
+      # nothing is built or published for a release that cannot ship: the
+      # `test-results` gate is evaluated by `attestation add`, so a failing suite
+      # fails that job even though the Maven run stays green.
       - name: Set up JDK 17
+        if: needs.integration-tests.result == 'success'
         uses: actions/setup-java@v4
         with:
           java-version: '17'
@@ -195,6 +250,7 @@ jobs:
       # Also writes ~/.docker/config.json, which is how the CLI below
       # authenticates when it resolves the digest.
       - name: Log in to GHCR
+        if: needs.integration-tests.result == 'success'
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: ghcr.io
@@ -203,7 +259,12 @@ jobs:
 
       # Paketo buildpacks, so there is no Dockerfile to keep in sync with the
       # build. Both suites already ran for this commit, hence -DskipTests.
+      #
+      # Recompiles the application, so the JAR inside the image is a second build
+      # of the commit, not the one api-build.yml attested.
       - name: Build and publish the container image
+        if: needs.integration-tests.result == 'success'
+        working-directory: payments-api
         run: |
           ./mvnw -B spring-boot:build-image -DskipTests \
             -Dspring-boot.build-image.imageName="$IMAGE" \
@@ -211,49 +272,20 @@ jobs:
             -Ddocker.publishRegistry.username='${{ github.actor }}' \
             -Ddocker.publishRegistry.password='${{ secrets.GITHUB_TOKEN }}'
 
-      - name: Install Chainloop
-        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
-
       # By reference, not upload: the CLI resolves the tag to its digest, so the
       # evidence still points at this image after the tag moves.
       - name: Attest container image
+        if: needs.integration-tests.result == 'success'
         run: |
           chainloop attestation add --name container-image --kind CONTAINER_IMAGE \
             --value "$IMAGE" --attestation-id "$ATTESTATION_ID"
 
-  # Closes the attestation and, only if it was accepted, promotes the version.
-  # `success()`/`failure()` describe a job's own steps, so upstream results are
-  # read from the needs context instead.
-  release:
-    name: Release attestation
-    needs: [ attestation-init, integration-tests, container-image ]
-    # Nothing to close if init produced no id, and `reset` would fail on an
-    # empty --attestation-id.
-    if: always() && needs.attestation-init.result == 'success'
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      id-token: write
-      # For the bump pull request.
-      pull-requests: write
-
-    env:
-      ATTESTATION_ID: ${{ needs.attestation-init.outputs.attestation-id }}
-      RELEASE_TAG: ${{ needs.attestation-init.outputs.tag }}
-      CURRENT_VERSION: ${{ needs.attestation-init.outputs.current-version }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Chainloop
-        run: curl -sfL https://api.app.chainloop.dev/cli/install.sh | bash -s
-
-      # Where the release is allowed to proceed or not: a policy violation makes
-      # this exit non-zero, which is what lets the gate block the pipeline.
+      # Still a gate, on this contract's own policies — source-commit here, and
+      # test-results back at `attestation add`. The compliance requirements were
+      # cleared by the release-gate job before any of this ran.
       - name: Push attestation
         id: push
-        if: needs.integration-tests.result == 'success' && needs.container-image.result == 'success'
+        if: needs.integration-tests.result == 'success'
         run: chainloop attestation push --attestation-id "$ATTESTATION_ID"
 
       # A plain control-plane call rather than an attestation, so it
@@ -294,17 +326,17 @@ jobs:
             `${{ env.CURRENT_VERSION }}`, which is now the released version.
           labels: automated
 
-      # Catch-all rather than one step per outcome: a needs result can also be
-      # `skipped`, which no failure/cancelled condition matches, leaving the
-      # remote attestation open forever. A blocked release lands here too — the
-      # gate failed the push, so the rename and the bump PR never ran and this
-      # closes the attestation, leaving nothing half-released.
+      # Catch-all rather than one step per outcome: the push can also be SKIPPED,
+      # which no failure/cancelled condition matches, leaving the remote
+      # attestation open forever. A blocked release lands here too — the gate
+      # failed the push, so the rename and the bump PR never ran and this closes
+      # the attestation, leaving nothing half-released.
       - name: Reset attestation if it was not pushed
         if: always() && steps.push.outcome != 'success'
         run: |
           trigger=failure
           if [ "${{ needs.integration-tests.result }}" = "cancelled" ] \
-            || [ "${{ needs.container-image.result }}" = "cancelled" ]; then
+            || [ "${{ job.status }}" = "cancelled" ]; then
             trigger=cancellation
           fi
           chainloop attestation reset --trigger "$trigger" --attestation-id "$ATTESTATION_ID"

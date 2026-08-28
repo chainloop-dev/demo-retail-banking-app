@@ -1,25 +1,20 @@
 apiVersion: chainloop.dev/v1
 kind: Contract
 metadata:
-  name: retail-banking-app-release
+  name: retail-banking-app-release-gate
 spec:
-  materials:
-    - name: integration-report
-      type: JUNIT_XML
-
-    - name: container-image
-      type: CONTAINER_IMAGE
-
   policies:
-    materials:
-      - ref: test-results
-        gate: true
-
     attestation:
       - ref: source-commit
         with:
           check_signature: "true"
           check_author_verified: "true"
+
+      - ref: check-compliance-requirement
+        with:
+          framework_name: chainloop-best-practices
+          requirement_name: sast-analysis,code-coverage,mutation-score
+        gate: true
 
   runner:
     type: GITHUB_ACTION
