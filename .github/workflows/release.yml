@@ -180,10 +180,11 @@ jobs:
         if: needs.integration-tests.result == 'success'
         run: chainloop attestation push --attestation-id "$ATTESTATION_ID"
 
+      # The CLI reads CHAINLOOP_TOKEN; the secret is named for what it may do.
       - name: Rename project version to the release tag
         if: steps.push.outcome == 'success'
         env:
-          CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_TOKEN }}
+          CHAINLOOP_TOKEN: ${{ secrets.CHAINLOOP_SYNC_CONTRACTS_TOKEN }}
         run: |
           chainloop project version update --project retail-banking-app \
             --name "$CURRENT_VERSION" --new-name "$RELEASE_TAG"
