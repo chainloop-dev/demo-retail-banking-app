@@ -1,0 +1,19 @@
+.github/workflows/release.yml
+  s_8d21b7e8bdc4cf::t_d76e99bc051770 183,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "46abbe0e7c574023c58063537f2d295da361cb1c",
+  "prompts": {},
+  "sessions": {
+    "s_8d21b7e8bdc4cf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "23167abe-a2df-4ef5-8400-baa5c042932e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Miguel Martinez <miguel@chainloop.dev>"
+    }
+  }
+}
