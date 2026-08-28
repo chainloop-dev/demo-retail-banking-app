@@ -1,0 +1,84 @@
+# Pipeline for the mobile client component, BEFORE Chainloop.
+#
+# Reference copy — see before/README.md. Nothing in this directory is picked up
+# by GitHub Actions.
+#
+# Placeholder component: there are no Android sources here and no scanner runs in
+# CI, so two of the steps below are substitutions and labelled as such. See
+# mobile-client/README.md for what is real and what is not.
+#
+# The APK and the Oversecured report both end up in the same run artifact, which
+# is as close as this pipeline gets to saying they belong together.
+
+name: Mobile Client Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Pre-built binary, and the path Gradle would have written the real one to.
+  PREBUILT_APK: mobile-client/DecodeConfigSampleAPI-Kotlin.apk
+  APK: mobile-client/build/outputs/apk/release/mobile-banking-release.apk
+  REPORT: mobile-client/build/reports/oversecured/mobile-banking-oversecured.json
+  # Oversecured SampleApp 3.4.0, already scanned in the tenant. Deliberately not
+  # the same application as the APK above.
+  OVERSECURED_APP_ID: 6c69e813-32f5-49f1-bf53-568d63fc309d
+  OVERSECURED_SCAN_ID: e62f4c1b-8ca7-4c7a-8ca8-7b7fd33a6b14
+  OVERSECURED_CLI: '@oversecured/cli@0.1.0-beta.4'
+
+jobs:
+  build:
+    name: Mobile client
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # SUBSTITUTION 1 of 2: a real pipeline replaces this with
+      # `./gradlew assembleRelease` and changes nothing else.
+      - name: Stage release APK (stands in for the Android build)
+        run: |
+          mkdir -p "$(dirname "$APK")"
+          cp "$PREBUILT_APK" "$APK"
+          sha256sum "$APK"
+
+      # SUBSTITUTION 2 of 2: Oversecured is cloud-only and metered, so the scan
+      # ran once out of band rather than per CI run.
+      - name: Scan APK (performed out of band in the Oversecured tenant)
+        run: |
+          echo "No scan runs in CI. Oversecured scan ${OVERSECURED_SCAN_ID}"
+          echo "of app ${OVERSECURED_APP_ID} already covers this component;"
+          echo "the next step fetches its report."
+
+      # Real: fetched live on every run. --output pins a stable filename;
+      # otherwise the CLI derives a timestamped one.
+      - name: Fetch Oversecured report
+        env:
+          OVERSECURED_API_TOKEN: ${{ secrets.OVERSECURED_API_TOKEN }}
+        run: |
+          mkdir -p "$(dirname "$REPORT")"
+          npx -y "$OVERSECURED_CLI" report "$OVERSECURED_SCAN_ID" \
+            --app "$OVERSECURED_APP_ID" \
+            --format json \
+            --output "$REPORT"
+
+      # Nothing reads the findings: the report is uploaded as-is and expires
+      # with the run.
+      - name: Upload APK and scan report
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-client-build
+          path: |
+            ${{ env.APK }}
+            ${{ env.REPORT }}
+          if-no-files-found: error
